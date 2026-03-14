@@ -135,8 +135,19 @@ function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
   return `Depth map readings (255=nearest,0=farthest): ${readings.join(', ')}`;
 }
 
-function stripMarkdown(text) {
-  return text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+function parseGeminiJSON(text) {
+  // Strip markdown fences
+  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  // Try standard parse first
+  try { return JSON.parse(cleaned); } catch (_) {}
+  // Fix unquoted property names: word: → "word":
+  cleaned = cleaned.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":');
+  // Fix single quotes → double quotes
+  cleaned = cleaned.replace(/'/g, '"');
+  // Fix trailing commas before } or ]
+  cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(cleaned); } catch (_) {}
+  return null;
 }
 
 export async function analyzeFrame(imageBase64, userQuery = null, memories = [], mode = 'scan') {
@@ -173,7 +184,6 @@ Respond with valid JSON only matching the schema.`;
       ]
     }],
     generationConfig: {
-      responseMimeType: 'application/json',
       temperature: 0.4,
       maxOutputTokens: 800,
     },
@@ -193,8 +203,9 @@ Respond with valid JSON only matching the schema.`;
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('No response text from Gemini');
-    const cleaned = stripMarkdown(text);
-    return JSON.parse(cleaned);
+    const result = parseGeminiJSON(text);
+    if (!result) throw new Error('Failed to parse Gemini JSON');
+    return result;
   }
 
   try {
@@ -205,7 +216,7 @@ Respond with valid JSON only matching the schema.`;
   } catch (err) {
     console.warn('Gemini attempt 1 failed:', err.message);
     // Retry once after 2s
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 500));
     try {
       const result = await doFetch();
       consecutiveFailures = 0;
