@@ -1,15 +1,33 @@
+import { useEffect } from 'react';
 import CameraFeed from './CameraFeed';
 import DepthMiniMap from './DepthMiniMap';
 import StatusIndicator from './StatusIndicator';
+import OverlayCanvas from './OverlayCanvas';
+import CaptionBar from './CaptionBar';
+import SafetyBanner from './SafetyBanner';
 import { useAppStore } from '../store/useAppStore';
+import { startAgentLoop, stopAgentLoop } from '../services/agentLoop';
 
 export default function MainView() {
   const { cameraError, cameraReady } = useAppStore();
+
+  useEffect(() => {
+    if (cameraReady) {
+      startAgentLoop();
+    }
+    return () => stopAgentLoop();
+  }, [cameraReady]);
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden">
       {/* Camera Feed */}
       <CameraFeed />
+
+      {/* Overlay Canvas */}
+      <OverlayCanvas />
+
+      {/* Safety Banner */}
+      <SafetyBanner />
 
       {/* Error State */}
       {cameraError && (
@@ -26,6 +44,7 @@ export default function MainView() {
         <>
           <DepthMiniMap />
           <StatusIndicator />
+          <CaptionBar />
         </>
       )}
 
