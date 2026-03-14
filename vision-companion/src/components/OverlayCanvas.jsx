@@ -60,7 +60,39 @@ export default function OverlayCanvas() {
       const color = obj.overlayColor || '#F0C020';
       const rgb = hexToRgb(color);
 
-      // Draw depth mask if available
+      // Draw depth heatmap inside bbox (on-device depth buffer → blue→green→red)
+      if (depthBuffer && depthWidth && depthHeight) {
+        const pxW = Math.round(screen.width);
+        const pxH = Math.round(screen.height);
+        if (pxW > 0 && pxH > 0) {
+          const heatmapData = new ImageData(pxW, pxH);
+          for (let py = 0; py < pxH; py++) {
+            for (let px = 0; px < pxW; px++) {
+              const cx = screen.x + px;
+              const cy = screen.y + py;
+              const dx = Math.min(Math.round((cx / W) * depthWidth), depthWidth - 1);
+              const dy = Math.min(Math.round((cy / H) * depthHeight), depthHeight - 1);
+              const val = depthBuffer[dy * depthWidth + dx] || 0;
+              // blue (far=0) → green (mid=128) → red (near=255)
+              const r = val > 128 ? Math.round(((val - 128) / 127) * 255) : 0;
+              const g = val < 128 ? Math.round((val / 128) * 255) : Math.round(((255 - val) / 127) * 255);
+              const b = val < 128 ? Math.round(((128 - val) / 128) * 255) : 0;
+              const idx = (py * pxW + px) * 4;
+              heatmapData.data[idx] = r;
+              heatmapData.data[idx + 1] = g;
+              heatmapData.data[idx + 2] = b;
+              heatmapData.data[idx + 3] = 90; // ~35% opacity
+            }
+          }
+          const tmp = document.createElement('canvas');
+          tmp.width = pxW;
+          tmp.height = pxH;
+          tmp.getContext('2d').putImageData(heatmapData, 0, 0);
+          ctx.drawImage(tmp, screen.x, screen.y);
+        }
+      }
+
+      // Depth range mask overlay (if LLM provided depthMaskRange)
       if (obj.depthMaskRange && depthBuffer) {
         const mask = createDepthMask(
           obj.bbox,

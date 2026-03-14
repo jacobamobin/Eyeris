@@ -17,6 +17,16 @@ import { startContinuousListening, stopContinuousListening, onTTSStart, onTTSEnd
 import { getRelevantMemories, saveMemory, saveConversation, pruneOldMemories } from './memoryService';
 import { AGENT_INTERVAL_MS } from '../config';
 
+function jaccardSimilarity(a, b) {
+  if (!a || !b) return 0;
+  const tokensA = new Set(a.toLowerCase().split(/\s+/));
+  const tokensB = new Set(b.toLowerCase().split(/\s+/));
+  let intersection = 0;
+  for (const t of tokensA) if (tokensB.has(t)) intersection++;
+  const union = tokensA.size + tokensB.size - intersection;
+  return union === 0 ? 1 : intersection / union;
+}
+
 let scanIntervalId = null;
 let isScanRunning = false;
 let isVoiceRunning = false;
@@ -77,13 +87,28 @@ async function handleSpeech(transcript, preCapture) {
     const frame = preCapture || await captureFrame(store.videoRef);
     const { depthBuffer, depthWidth, depthHeight } = store;
     const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
-    const memories = getRelevantMemories(transcript, 3).map(m => m.content);
 
-    // Start Gemini streaming immediately — yields text chunks
-    const textStream = streamVoiceResponse(frame, transcript, memories, depthCtx);
-
-    store.setAvatarState('speaking');
-    await streamAndSpeak(textStream);
+    if (store.mode === 'find') {
+      // Find mode: use structured analysis to get bboxes + spoken_response
+      const memories = getRelevantMemories(transcript, 5);
+      const result = await analyzeFrame(frame, transcript, memories, 'find');
+      if (result) {
+        if (result.objects?.length) store.setDetectedObjects(result.objects);
+        if (result.caption) store.setCurrentCaption(result.caption);
+        handleSafetyAlert(result.safety_alert, store);
+        handleMemoryUpdate(result.memory_update);
+        if (result.spoken_response) {
+          store.setAvatarState('speaking');
+          await speak(result.spoken_response);
+        }
+      }
+    } else {
+      // All other modes: streaming voice response
+      const memories = getRelevantMemories(transcript, 3).map(m => m.content);
+      const textStream = streamVoiceResponse(frame, transcript, memories, depthCtx);
+      store.setAvatarState('speaking');
+      await streamAndSpeak(textStream);
+    }
 
     try {
       await saveConversation({ role: 'user', content: transcript, mode: 'voice' });
@@ -120,15 +145,11 @@ export function startAgentLoop() {
       if (!result) return;
 
       if (result.objects?.length) store.setDetectedObjects(result.objects);
-      if (result.caption) store.setCurrentCaption(result.caption);
+      if (result.caption && jaccardSimilarity(result.caption, store.currentCaption) < 0.65) {
+        store.setCurrentCaption(result.caption);
+      }
       handleSafetyAlert(result.safety_alert, store);
       handleMemoryUpdate(result.memory_update);
-
-      if (result.safety_alert?.level === 'critical' && result.spoken_response) {
-        store.setAvatarState('speaking');
-        await speak(result.spoken_response);
-        store.setAvatarState('idle');
-      }
     } catch (err) {
       console.error('Scan loop error:', err);
     } finally {

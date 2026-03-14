@@ -16,7 +16,7 @@ export default function ControlBar() {
     mode, setMode, setIsScanning, setAvatarState,
     micMuted, setMicMuted: storeMicMuted,
     speakerMuted, setSpeakerMuted: storeSpeakerMuted,
-    setScreen,
+    setScreen, setCurrentCaption,
   } = useAppStore();
 
   const handleModeChange = async (newMode) => {
@@ -33,8 +33,8 @@ export default function ControlBar() {
       stopAgentLoop();
       setAvatarState('idle');
 
-      if (newMode === 'read' || newMode === 'find') {
-        const result = await runOnce(newMode, null);
+      if (newMode === 'read') {
+        const result = await runOnce('read', null);
         if (result?.spoken_response) {
           setAvatarState('speaking');
           await speak(result.spoken_response);
@@ -42,6 +42,10 @@ export default function ControlBar() {
         } else {
           setAvatarState('idle');
         }
+      } else if (newMode === 'find') {
+        // Prompt user to speak — voice agent will handle the query
+        setCurrentCaption('Say what you\'re looking for...');
+        setAvatarState('listening');
       }
     }
   };
