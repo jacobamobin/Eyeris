@@ -53,23 +53,6 @@ function handleMemoryUpdate(memoryUpdate) {
   } catch (_) {}
 }
 
-function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
-  if (!depthBuffer) return 'No depth data available.';
-  const positions = [
-    { name: 'top-left', x: 0.1, y: 0.1 }, { name: 'top-center', x: 0.5, y: 0.1 }, { name: 'top-right', x: 0.9, y: 0.1 },
-    { name: 'center-left', x: 0.1, y: 0.5 }, { name: 'center', x: 0.5, y: 0.5 }, { name: 'center-right', x: 0.9, y: 0.5 },
-    { name: 'bottom-center', x: 0.5, y: 0.9 },
-  ];
-  const readings = positions.map(p => {
-    const x = Math.round(p.x * depthWidth);
-    const y = Math.round(p.y * depthHeight);
-    const val = depthBuffer[y * depthWidth + x] || 0;
-    const dist = val > 200 ? 'very close' : val > 150 ? 'close' : val > 100 ? 'mid' : val > 50 ? 'far' : 'very far';
-    return `${p.name}:${dist}(${val})`;
-  });
-  return `Depth (255=nearest,0=farthest): ${readings.join(', ')}`;
-}
-
 // ─── Voice speech handler ─────────────────────────────────────────────────────
 
 async function handleSpeech(transcript, preCapture) {
@@ -85,16 +68,14 @@ async function handleSpeech(transcript, preCapture) {
     const frame = preCapture || await captureFrame(store.videoRef);
     if (!frame) return;
 
-    const { depthBuffer, depthWidth, depthHeight } = store;
-    const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
     const memories = getRelevantMemories(transcript, 3).map(m => m.content);
 
     let query = transcript;
     if (store.mode === 'find') {
-      query = `Locate: "${transcript}". Tell me exactly where it is and how to reach it. Mark it with isTarget: true in your response.`;
+      query = `Locate: "${transcript}". Tell me exactly where it is and how to reach it.`;
     }
 
-    const textStream = streamVoiceResponse(frame, query, memories, depthCtx);
+    const textStream = streamVoiceResponse(frame, query, memories);
     store.setAvatarState('speaking');
     await streamAndSpeak(textStream);
 
@@ -218,9 +199,7 @@ export async function runOnceRead() {
     const frame = await captureFrame(store.videoRef);
     if (!frame) return;
     const memories = getRelevantMemories('read text', 3).map(m => m.content);
-    const { depthBuffer, depthWidth, depthHeight } = store;
-    const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
-    const textStream = streamVoiceResponse(frame, 'Read all visible text in the image, word for word.', memories, depthCtx);
+    const textStream = streamVoiceResponse(frame, 'Read all visible text in the image, word for word.', memories);
     store.setAvatarState('speaking');
     await streamAndSpeak(textStream);
   } catch (err) {

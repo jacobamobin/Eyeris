@@ -1,5 +1,4 @@
 import { GEMINI_API_KEY, GEMINI_MODEL } from '../config';
-import { useAppStore } from '../store/useAppStore';
 
 // ─── Voice streaming prompt (short, fast) ────────────────────────────────────
 
@@ -58,13 +57,12 @@ async function* streamGemini(response) {
 
 // ─── Streaming voice response ─────────────────────────────────────────────────
 
-export async function* streamVoiceResponse(imageBase64, userQuery, memories = [], depthContext = '') {
+export async function* streamVoiceResponse(imageBase64, userQuery, memories = []) {
   const memoryContext = memories.length > 0
     ? `\nContext: ${memories.join(' | ')}`
     : '';
 
-  const userText = `User asked: "${userQuery}"
-${depthContext}${memoryContext}`;
+  const userText = `User asked: "${userQuery}"${memoryContext}`;
 
   const requestBody = {
     system_instruction: { parts: [{ text: VOICE_SYSTEM_PROMPT }] },
@@ -114,27 +112,6 @@ RULES:
 
 let consecutiveFailures = 0;
 
-function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
-  if (!depthBuffer) return '';
-  const positions = [
-    { name: 'top-left', x: 0.1, y: 0.1 },
-    { name: 'top-center', x: 0.5, y: 0.1 },
-    { name: 'top-right', x: 0.9, y: 0.1 },
-    { name: 'center-left', x: 0.1, y: 0.5 },
-    { name: 'center', x: 0.5, y: 0.5 },
-    { name: 'center-right', x: 0.9, y: 0.5 },
-    { name: 'bottom-center', x: 0.5, y: 0.9 },
-  ];
-  const readings = positions.map(p => {
-    const x = Math.round(p.x * depthWidth);
-    const y = Math.round(p.y * depthHeight);
-    const val = depthBuffer[y * depthWidth + x] || 0;
-    const dist = val > 200 ? 'very close' : val > 150 ? 'close' : val > 100 ? 'mid' : val > 50 ? 'far' : 'very far';
-    return `${p.name}:${dist}(${val})`;
-  });
-  return `Depth map readings (255=nearest,0=farthest): ${readings.join(', ')}`;
-}
-
 function parseGeminiJSON(text) {
   // Strip markdown fences
   let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -156,9 +133,6 @@ export async function analyzeFrame(imageBase64, userQuery = null, memories = [],
     consecutiveFailures = 0;
   }
 
-  const { depthBuffer, depthWidth, depthHeight } = useAppStore.getState();
-  const depthContext = buildDepthContext(depthBuffer, depthWidth, depthHeight);
-
   const modeInstructions = {
     scan: 'Describe the scene spatially. Focus on navigation-relevant objects.',
     talk: userQuery ? `User asked: "${userQuery}". Answer directly and helpfully.` : 'Describe the scene.',
@@ -170,9 +144,8 @@ export async function analyzeFrame(imageBase64, userQuery = null, memories = [],
     ? `\nRelevant memories:\n${memories.map(m => `- ${m.content}`).join('\n')}`
     : '';
 
-  const userText = `${modeInstructions[mode] || modeInstructions.scan}
-${depthContext}${memoryContext}
-Respond with valid JSON only matching the schema.`;
+  const userText = `${modeInstructions[mode] || modeInstructions.scan}${memoryContext}
+Respond with valid JSON only.`;
 
   const requestBody = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
