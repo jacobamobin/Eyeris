@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export const useAppStore = create((set, get) => ({
+export const useAppStore = create((set) => ({
   // Navigation
   screen: 'landing', // 'landing' | 'app'
   setScreen: (screen) => set({ screen }),

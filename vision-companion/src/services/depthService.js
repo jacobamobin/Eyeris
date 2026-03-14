@@ -79,13 +79,17 @@ function startCapture(videoElement) {
   intervalId = setInterval(() => {
     if (isCapturing || !videoElement || videoElement.readyState < 2) return;
     isCapturing = true;
-    const canvas = new OffscreenCanvas(256, 256);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoElement, 0, 0, 256, 256);
-    createImageBitmap(canvas).then(bitmap => {
+    try {
+      const canvas = new OffscreenCanvas(256, 256);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoElement, 0, 0, 256, 256);
+      // transferToImageBitmap is synchronous and properly transfers ownership
+      const bitmap = canvas.transferToImageBitmap();
       worker.postMessage({ type: 'frame', imageBitmap: bitmap }, [bitmap]);
-      isCapturing = false;
-    }).catch(() => { isCapturing = false; });
+    } catch (e) {
+      console.warn('Frame capture failed:', e);
+    }
+    isCapturing = false;
   }, DEPTH_INTERVAL_MS);
 }
 

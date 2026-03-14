@@ -120,6 +120,7 @@ Respond with valid JSON only matching the schema.`;
     }],
     generationConfig: {
       responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA,
       temperature: 0.4,
       maxOutputTokens: 1024,
     },

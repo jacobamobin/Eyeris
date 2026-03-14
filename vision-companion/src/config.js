@@ -8,3 +8,6 @@ export const DEPTH_MODEL = 'onnx-community/depth-anything-v2-small';
 export const AGENT_INTERVAL_MS = 2500;
 export const DEPTH_INTERVAL_MS = 200;
 export const ELEVENLABS_MODEL = 'eleven_flash_v2_5';
+
+// Railtracks Python agent backend (run: cd vision-agent && python server.py)
+export const RAILTRACKS_API_URL = import.meta.env.VITE_RAILTRACKS_API_URL || 'http://localhost:8000';

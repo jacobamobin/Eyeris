@@ -8,7 +8,7 @@ import SafetyBanner from './SafetyBanner';
 import AvatarView from './AvatarView';
 import ControlBar from './ControlBar';
 import { useAppStore } from '../store/useAppStore';
-import { startAgentLoop, stopAgentLoop } from '../services/agentLoop';
+import { startAgentLoop, stopAgentLoop, startVoiceAgent, stopVoiceAgent } from '../services/agentLoop';
 
 export default function MainView() {
   const { cameraError, cameraReady } = useAppStore();
@@ -16,8 +16,12 @@ export default function MainView() {
   useEffect(() => {
     if (cameraReady) {
       startAgentLoop();
+      startVoiceAgent(); // Always-on voice listener
     }
-    return () => stopAgentLoop();
+    return () => {
+      stopAgentLoop();
+      stopVoiceAgent();
+    };
   }, [cameraReady]);
 
   return (
