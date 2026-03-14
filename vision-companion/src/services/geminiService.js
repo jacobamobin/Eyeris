@@ -98,48 +98,19 @@ ${depthContext}${memoryContext}`;
 }
 
 const SYSTEM_PROMPT = `You are VisionCompanion, a visual assistant for blind/low-vision users.
-RULES:
-1. caption: max 10 words describing the scene. spoken_response: one sentence answer or "".
-2. SAFETY FIRST: stairs, obstacles, vehicles → safety_alert level "critical".
-3. Spatial language: "left", "right", "ahead", "close", "far".
-4. Return max 5 objects, navigation-relevant only.
-5. sfSymbol: alert-triangle, arrow-left, arrow-right, arrow-up, stop-circle, door-open.
-6. overlayColor: "#D02020" danger, "#F0C020" neutral, "#1040C0" target.
-7. isTarget: true only when user is searching for that specific object.
-Respond with ONLY valid JSON. No markdown. No code fences.`;
 
-const RESPONSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    objects: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          label: { type: 'string' },
-          bbox: { type: 'array', items: { type: 'number' } },
-          isTarget: { type: 'boolean' },
-          sfSymbol: { type: 'string' },
-          overlayColor: { type: 'string' },
-        },
-        required: ['id', 'label', 'bbox', 'isTarget', 'overlayColor'],
-      }
-    },
-    caption: { type: 'string' },
-    spoken_response: { type: 'string' },
-    safety_alert: {
-      type: 'object',
-      properties: {
-        level: { type: 'string', enum: ['critical', 'warning', 'info'] },
-        message: { type: 'string' },
-        sfSymbol: { type: 'string' },
-      },
-      required: ['level', 'message', 'sfSymbol'],
-    },
-  },
-  required: ['objects', 'caption', 'spoken_response'],
-};
+You MUST respond with ONLY a valid JSON object exactly matching this structure (no markdown, no fences, no extra text):
+{"objects":[{"id":"string","label":"string","bbox":[ymin,xmin,ymax,xmax],"isTarget":false,"sfSymbol":"string","overlayColor":"#F0C020"}],"caption":"short scene description","spoken_response":"","safety_alert":{"level":"critical","message":"string","sfSymbol":"alert-triangle"}}
+
+RULES:
+- bbox values are 0-1000 normalized (ymin,xmin,ymax,xmax)
+- caption: max 10 words
+- spoken_response: always "" (voice is handled separately)
+- safety_alert: only include if there is a real hazard (stairs, vehicle, obstacle), otherwise omit the field
+- objects: max 5, navigation-relevant only
+- overlayColor: "#D02020" danger/hazard, "#F0C020" neutral, "#1040C0" target object
+- sfSymbol options: alert-triangle, arrow-left, arrow-right, arrow-up, stop-circle, door-open
+- isTarget: true only when user is explicitly searching for that object`;
 
 let consecutiveFailures = 0;
 
@@ -203,7 +174,6 @@ Respond with valid JSON only matching the schema.`;
     }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
       temperature: 0.4,
       maxOutputTokens: 800,
     },
