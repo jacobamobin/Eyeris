@@ -59,6 +59,12 @@ export const useAppStore = create((set) => ({
   memories: [],
   setMemories: (m) => set({ memories: m }),
 
+  // Mute toggles
+  micMuted: false,
+  setMicMuted: (v) => set({ micMuted: v }),
+  speakerMuted: false,
+  setSpeakerMuted: (v) => set({ speakerMuted: v }),
+
   // Status
   geminiConnected: false,
   setGeminiConnected: (v) => set({ geminiConnected: v }),

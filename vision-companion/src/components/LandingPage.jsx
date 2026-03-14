@@ -4,12 +4,16 @@ import { useAppStore } from '../store/useAppStore';
 import { Eye, Zap, Mic, Shield, Brain, Globe } from 'lucide-react';
 import OnboardingModal from './OnboardingModal';
 import { getPreference } from '../services/memoryService';
+import { unlockAudio } from '../services/ttsService';
 
 export default function LandingPage() {
   const { setScreen } = useAppStore();
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const handleLaunch = () => {
+    // Pre-unlock AudioContext on user gesture — must happen here before any async work
+    unlockAudio();
+
     const alreadyOnboarded = getPreference('onboarded', false);
     if (!alreadyOnboarded) {
       setShowOnboarding(true);

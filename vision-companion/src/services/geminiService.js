@@ -1,6 +1,79 @@
 import { GEMINI_API_KEY, GEMINI_MODEL } from '../config';
 import { useAppStore } from '../store/useAppStore';
 
+// ─── Voice streaming prompt (short, fast) ────────────────────────────────────
+
+const VOICE_SYSTEM_PROMPT = `You are VisionCompanion, a voice assistant for blind users. Answer in 1-2 sentences max. Be warm and spatial. No JSON.`;
+
+// ─── SSE stream parser — yields text chunks as async generator ────────────────
+
+async function* streamGemini(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    const lines = buf.split('\n');
+    buf = lines.pop(); // keep incomplete line
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const json = line.slice(6).trim();
+      if (json === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(json);
+        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) yield text;
+      } catch (_) {}
+    }
+  }
+}
+
+// ─── Streaming voice response ─────────────────────────────────────────────────
+
+export async function* streamVoiceResponse(imageBase64, userQuery, memories = [], depthContext = '') {
+  const memoryContext = memories.length > 0
+    ? `\nContext: ${memories.join(' | ')}`
+    : '';
+
+  const userText = `User asked: "${userQuery}"
+${depthContext}${memoryContext}`;
+
+  const requestBody = {
+    system_instruction: { parts: [{ text: VOICE_SYSTEM_PROMPT }] },
+    contents: [{
+      role: 'user',
+      parts: [
+        ...(imageBase64 ? [{ inline_data: { mime_type: 'image/jpeg', data: imageBase64 } }] : []),
+        { text: userText },
+      ],
+    }],
+    generationConfig: {
+      responseMimeType: 'text/plain',
+      temperature: 0.7,
+      maxOutputTokens: 200,
+    },
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini streaming error: ${response.status}`);
+  }
+
+  yield* streamGemini(response);
+}
+
 const SYSTEM_PROMPT = `You are VisionCompanion, a warm AI visual assistant for blind/low-vision users.
 RULES:
 1. Concise: 1-3 sentences unless asked for detail.

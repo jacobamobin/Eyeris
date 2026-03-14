@@ -2,20 +2,20 @@
  * agentLoop.js — Always-on VisionCompanion agent.
  *
  * Two parallel tracks:
- *   Track A (vision): Gemini analyzes the camera frame every 2.5s.
+ *   Track A (vision): Gemini analyzes the camera frame every 2.5s (scan/read/find overlays).
  *   Track B (voice):  Continuous Web Speech listens for user speech anytime.
  *
- * When the user speaks, Track B interrupts, processes the voice query through
- * the Railtracks backend (or Gemini directly as fallback), then resumes.
+ * Voice is ALWAYS on. No mode toggle required to speak.
+ * Barge-in is supported: speaking while AI talks cancels TTS and processes new query.
  */
 
 import { useAppStore } from '../store/useAppStore';
 import { captureFrame } from '../utils/frameCapture';
-import { analyzeFrame } from './geminiService';
-import { speak, stopSpeaking, unlockAudio } from './ttsService';
-import { startContinuousListening, stopContinuousListening, pauseListening, resumeListening } from './continuousListener';
+import { analyzeFrame, streamVoiceResponse } from './geminiService';
+import { speak, stopSpeaking, unlockAudio, streamAndSpeak } from './ttsService';
+import { startContinuousListening, stopContinuousListening } from './continuousListener';
 import { getRelevantMemories, saveMemory, saveConversation, pruneOldMemories } from './memoryService';
-import { AGENT_INTERVAL_MS, RAILTRACKS_API_URL } from '../config';
+import { AGENT_INTERVAL_MS } from '../config';
 
 let scanIntervalId = null;
 let isScanRunning = false;
@@ -27,40 +27,73 @@ function handleSafetyAlert(alert, store) {
   if (!alert) return;
   const id = 'gemini-' + Date.now();
   if (store.dismissedAlerts?.includes(id)) return;
-
-  if (alert.level === 'critical') {
+  if (alert.level === 'critical' || alert.level === 'warning') {
     store.setSafetyAlert({ ...alert, id });
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-  } else if (alert.level === 'warning') {
-    store.setSafetyAlert({ ...alert, id });
+    if (alert.level === 'critical' && navigator.vibrate) navigator.vibrate([200, 100, 200]);
   }
-  // info: caption only, no banner
 }
 
 function handleMemoryUpdate(memoryUpdate) {
   if (!memoryUpdate?.content) return;
   try {
-    saveMemory(memoryUpdate.content, memoryUpdate.category || 'general', memoryUpdate.importance || 0.5, memoryUpdate.tags || []);
+    saveMemory(
+      memoryUpdate.content,
+      memoryUpdate.category || 'general',
+      memoryUpdate.importance || 0.5,
+      memoryUpdate.tags || []
+    );
   } catch (_) {}
 }
 
-// ─── Railtracks Backend ───────────────────────────────────────────────────────
-// Routes voice queries through the Railtracks Python agent when available.
-// Falls back to direct Gemini if the backend isn't running.
+function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
+  if (!depthBuffer) return 'No depth data available.';
+  const positions = [
+    { name: 'top-left', x: 0.1, y: 0.1 }, { name: 'top-center', x: 0.5, y: 0.1 }, { name: 'top-right', x: 0.9, y: 0.1 },
+    { name: 'center-left', x: 0.1, y: 0.5 }, { name: 'center', x: 0.5, y: 0.5 }, { name: 'center-right', x: 0.9, y: 0.5 },
+    { name: 'bottom-center', x: 0.5, y: 0.9 },
+  ];
+  const readings = positions.map(p => {
+    const x = Math.round(p.x * depthWidth);
+    const y = Math.round(p.y * depthHeight);
+    const val = depthBuffer[y * depthWidth + x] || 0;
+    const dist = val > 200 ? 'very close' : val > 150 ? 'close' : val > 100 ? 'mid' : val > 50 ? 'far' : 'very far';
+    return `${p.name}:${dist}(${val})`;
+  });
+  return `Depth (255=nearest,0=farthest): ${readings.join(', ')}`;
+}
 
-async function queryRailtracksAgent(imageBase64, userQuery, depthContext, memories) {
+// ─── Voice speech handler (shared between onSpeech and barge-in retry) ────────
+
+async function handleSpeech(transcript, preCapture) {
+  if (isVoiceRunning) return;
+  isVoiceRunning = true;
+
+  const store = useAppStore.getState();
+  store.setAvatarState('thinking');
+  store.setUserQuery(transcript);
+  store.setCurrentCaption(`"${transcript}"`);
+
   try {
-    const res = await fetch(`${RAILTRACKS_API_URL}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ image_b64: imageBase64, user_query: userQuery, depth_context: depthContext, memories }),
-    });
-    if (!res.ok) throw new Error(`Railtracks API ${res.status}`);
-    return await res.json();
+    const frame = preCapture || await captureFrame(store.videoRef);
+    const { depthBuffer, depthWidth, depthHeight } = store;
+    const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
+    const memories = getRelevantMemories(transcript, 3).map(m => m.content);
+
+    // Start Gemini streaming immediately — yields text chunks
+    const textStream = streamVoiceResponse(frame, transcript, memories, depthCtx);
+
+    store.setAvatarState('speaking');
+    await streamAndSpeak(textStream);
+
+    try {
+      await saveConversation({ role: 'user', content: transcript, mode: 'voice' });
+    } catch (_) {}
   } catch (err) {
-    // Backend not running — fall through to direct Gemini
-    return null;
+    console.error('Voice agent error:', err);
+    await speak('Sorry, something went wrong. Please try again.');
+  } finally {
+    isVoiceRunning = false;
+    store.setAvatarState('idle');
   }
 }
 
@@ -68,7 +101,6 @@ async function queryRailtracksAgent(imageBase64, userQuery, depthContext, memori
 
 export function startAgentLoop() {
   if (scanIntervalId) return;
-
   try { pruneOldMemories(); } catch (_) {}
 
   scanIntervalId = setInterval(async () => {
@@ -89,11 +121,9 @@ export function startAgentLoop() {
 
       if (result.objects?.length) store.setDetectedObjects(result.objects);
       if (result.caption) store.setCurrentCaption(result.caption);
-
       handleSafetyAlert(result.safety_alert, store);
       handleMemoryUpdate(result.memory_update);
 
-      // Proactively speak critical alerts and first-time scene summaries
       if (result.safety_alert?.level === 'critical' && result.spoken_response) {
         store.setAvatarState('speaking');
         await speak(result.spoken_response);
@@ -114,69 +144,24 @@ export function stopAgentLoop() {
   isScanRunning = false;
 }
 
-// ─── Track B: Always-On Voice Processing ─────────────────────────────────────
+// ─── Track B: Always-On Voice (streaming, barge-in) ──────────────────────────
 
 export function startVoiceAgent() {
   unlockAudio();
 
-  startContinuousListening(async (transcript) => {
-    if (isVoiceRunning) return;
-
-    const store = useAppStore.getState();
-    if (store.isSpeaking) {
-      // Barge-in: stop current speech then process new query
+  startContinuousListening({
+    onSpeech: async (transcript, preCapture) => {
+      await handleSpeech(transcript, preCapture);
+    },
+    onBargeIn: async (transcript) => {
+      // Cancel current TTS immediately
       stopSpeaking();
-      await new Promise(r => setTimeout(r, 150));
-    }
-
-    isVoiceRunning = true;
-    pauseListening(); // Don't pick up TTS output as speech input
-    store.setAvatarState('thinking');
-    store.setUserQuery(transcript);
-    store.setCurrentCaption(`You: "${transcript}"`);
-
-    try {
-      const base64 = await captureFrame(store.videoRef);
-      if (!base64) {
-        await speak("I couldn't see anything. Please make sure the camera is active.");
-        return;
-      }
-
-      const { depthBuffer, depthWidth, depthHeight } = store;
-      const depthContext = buildDepthContext(depthBuffer, depthWidth, depthHeight);
-      const memories = getRelevantMemories(transcript, 5);
-
-      // Try Railtracks backend first, fall back to direct Gemini
-      let result = await queryRailtracksAgent(base64, transcript, depthContext, memories.map(m => m.content));
-      if (!result) {
-        result = await analyzeFrame(base64, transcript, memories, 'talk');
-      }
-
-      if (!result) {
-        await speak("Sorry, I couldn't process that. Please try again.");
-        return;
-      }
-
-      if (result.objects?.length) store.setDetectedObjects(result.objects);
-      if (result.caption) store.setCurrentCaption(result.caption);
-      handleSafetyAlert(result.safety_alert, store);
-      handleMemoryUpdate(result.memory_update);
-
-      const response = result.spoken_response || result.caption || "I see the scene but have no specific response.";
-      store.setAvatarState('speaking');
-      await speak(response);
-
-      try {
-        await saveConversation({ role: 'user', content: transcript, response, mode: 'talk' });
-      } catch (_) {}
-    } catch (err) {
-      console.error('Voice agent error:', err);
-      await speak("Something went wrong. Please try again.");
-    } finally {
       isVoiceRunning = false;
-      store.setAvatarState('idle');
-      resumeListening();
-    }
+      // Small pause to let audio buffers drain
+      setTimeout(() => handleSpeech(transcript, null), 100);
+    },
+    getVideoRef: () => useAppStore.getState().videoRef,
+    getIsSpeaking: () => useAppStore.getState().isSpeaking,
   });
 }
 
@@ -216,23 +201,4 @@ export async function runOnce(mode, userQuery = null) {
     isScanRunning = false;
     store.setIsProcessing(false);
   }
-}
-
-// ─── Depth context builder ────────────────────────────────────────────────────
-
-function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
-  if (!depthBuffer) return 'No depth data available.';
-  const positions = [
-    { name: 'top-left', x: 0.1, y: 0.1 }, { name: 'top-center', x: 0.5, y: 0.1 }, { name: 'top-right', x: 0.9, y: 0.1 },
-    { name: 'center-left', x: 0.1, y: 0.5 }, { name: 'center', x: 0.5, y: 0.5 }, { name: 'center-right', x: 0.9, y: 0.5 },
-    { name: 'bottom-center', x: 0.5, y: 0.9 },
-  ];
-  const readings = positions.map(p => {
-    const x = Math.round(p.x * depthWidth);
-    const y = Math.round(p.y * depthHeight);
-    const val = depthBuffer[y * depthWidth + x] || 0;
-    const dist = val > 200 ? 'very close' : val > 150 ? 'close' : val > 100 ? 'mid' : val > 50 ? 'far' : 'very far';
-    return `${p.name}:${dist}(${val})`;
-  });
-  return `Depth (255=nearest,0=farthest): ${readings.join(', ')}`;
 }
