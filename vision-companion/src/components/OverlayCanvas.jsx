@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { geminiToScreen } from '../utils/bboxMapper';
 import { createDepthMask } from '../utils/depthMask';
+
+const STALE_OVERLAY_TTL_MS = 8000; // Clear overlays after 8s of no updates
 
 const ICON_MAP = {
   'alert-triangle': '⚠',
@@ -24,7 +26,23 @@ function hexToRgb(hex) {
 
 export default function OverlayCanvas() {
   const canvasRef = useRef(null);
-  const { detectedObjects, depthBuffer, depthWidth, depthHeight } = useAppStore();
+  const lastUpdateRef = useRef(Date.now());
+  const staleTimerRef = useRef(null);
+  const { detectedObjects, depthBuffer, depthWidth, depthHeight, setDetectedObjects } = useAppStore();
+
+  // Stale overlay cleanup
+  useEffect(() => {
+    if (detectedObjects && detectedObjects.length > 0) {
+      lastUpdateRef.current = Date.now();
+      if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
+      staleTimerRef.current = setTimeout(() => {
+        setDetectedObjects([]);
+      }, STALE_OVERLAY_TTL_MS);
+    }
+    return () => {
+      if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
+    };
+  }, [detectedObjects]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

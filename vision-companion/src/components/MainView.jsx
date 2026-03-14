@@ -21,7 +21,11 @@ export default function MainView() {
   }, [cameraReady]);
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
+    <main
+      className="relative w-full h-screen bg-black overflow-hidden"
+      role="main"
+      aria-label="VisionCompanion camera view"
+    >
       {/* Camera Feed */}
       <CameraFeed />
 
@@ -33,10 +37,11 @@ export default function MainView() {
 
       {/* Error State */}
       {cameraError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-50">
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-50" role="alert">
           <div className="bg-[#D02020] text-white p-8 border-4 border-white shadow-[8px_8px_0px_0px_white] max-w-sm mx-4">
             <h2 className="text-2xl font-black uppercase tracking-tight mb-3">CAMERA ERROR</h2>
             <p className="font-medium">{cameraError}</p>
+            <p className="text-sm mt-3 text-white/80">Please grant camera permissions and reload.</p>
           </div>
         </div>
       )}
@@ -56,13 +61,13 @@ export default function MainView() {
 
       {/* Loading state when camera not ready */}
       {!cameraReady && !cameraError && (
-        <div className="absolute inset-0 flex items-center justify-center z-30">
+        <div className="absolute inset-0 flex items-center justify-center z-30" role="status" aria-live="polite">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-white border-t-[#1040C0] rounded-full animate-spin mx-auto mb-4" />
+            <div className="w-16 h-16 border-4 border-white border-t-[#1040C0] rounded-full animate-spin mx-auto mb-4" aria-hidden="true" />
             <p className="text-white font-bold uppercase tracking-wider">INITIALIZING CAMERA...</p>
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

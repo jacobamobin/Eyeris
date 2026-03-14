@@ -1,16 +1,35 @@
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore';
 import { Eye, Zap, Mic, Shield, Brain, Globe } from 'lucide-react';
+import OnboardingModal from './OnboardingModal';
+import { getPreference } from '../services/memoryService';
 
 export default function LandingPage() {
   const { setScreen } = useAppStore();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const handleLaunch = () => {
+    const alreadyOnboarded = getPreference('onboarded', false);
+    if (!alreadyOnboarded) {
+      setShowOnboarding(true);
+    } else {
+      setScreen('app');
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
     setScreen('app');
   };
 
   return (
     <div className="min-h-screen bg-[#F0F0F0] font-['Outfit'] overflow-x-hidden">
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingModal onComplete={handleOnboardingComplete} />
+        )}
+      </AnimatePresence>
       {/* Hero Section */}
       <section className="relative min-h-screen flex flex-col lg:flex-row overflow-hidden">
         {/* Left: Text Content */}
