@@ -1,0 +1,297 @@
+import logging
+import os
+import re
+from contextvars import ContextVar
+from typing import Dict, Literal
+
+from colorama import Fore, init
+
+AllowableLogLevels = Literal[
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+    "CRITICAL",
+    "NONE",
+]
+
+str_to_log_level: Dict[str, int] = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+    "NONE": logging.CRITICAL + 1,  # no logs emitted
+}
+
+# the temporary name for the logger that RT will use.
+rt_logger_name = "RT"
+rt_logger = logging.getLogger(rt_logger_name)
+
+_default_format_string = "%(timestamp_color)s[+%(relative_seconds)-7ss] %(level_color)s%(name)-12s: %(levelname)-8s - %(message)s%(default_color)s"
+
+
+_file_format_string = (
+    "%(asctime)s - %(relative_seconds)s - %(levelname)ss - %(name)s - %(message)s"
+)
+# _file_format_string = "[%(asctime)] %(timestamp_color)s[+%(relative_seconds)-7ss] %(level_color)s%(name)-12s: %(levelname)-8s - %(message)s%(default_color)s"
+
+# log levels are ints hence the type hints
+_module_logging_level: ContextVar[int | None] = ContextVar(
+    "module_logging_level", default=None
+)
+
+_module_logging_file: ContextVar[str | os.PathLike | None] = ContextVar(
+    "module_logging_file", default=None
+)
+
+# Initialize colorama
+init(autoreset=True)
+
+
+class ThreadAwareFilter(logging.Filter):
+    """
+    A filter that uses per-thread logging levels using ContextVar.
+
+    When a log record is processed, this filter executes in the thread that
+    created the record, so it correctly retrieves that thread's logging level.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Determine if the record should be logged based on thread's level.
+
+        Args:
+            record: The log record to filter
+
+        Returns:
+            True if the record should be logged, False otherwise
+
+        Raises:
+            ValueError: If the logging level in ContextVar is invalid
+        """
+        thread_log_level = _module_logging_level.get()
+
+        return (
+            record.levelno >= thread_log_level if thread_log_level is not None else True
+        )
+
+
+class ColorfulFormatter(logging.Formatter):
+    """
+    A simple formatter that can be used to format log messages with colours based on the log level and specific keywords.
+    """
+
+    def __init__(self, fmt=None, datefmt=None):
+        super().__init__(fmt, datefmt)
+        self.level_colors = {
+            logging.DEBUG: Fore.CYAN,
+            logging.INFO: Fore.WHITE,  # White for logger.info
+            logging.WARNING: Fore.YELLOW,
+            logging.ERROR: Fore.LIGHTRED_EX,  # Red for logger.exception or logger.error
+            logging.CRITICAL: Fore.RED,
+        }
+        self.keyword_colors = {
+            "FAILED": Fore.RED,
+            "WARNING": Fore.YELLOW,
+            "CREATED": Fore.GREEN,
+            "DONE": Fore.BLUE,
+        }
+        self.timestamp_color = Fore.LIGHTBLACK_EX
+        self.default_color = Fore.WHITE
+
+        # precompute the regex patterns
+        self.keyword_patterns = {
+            keyword: re.compile(rf"(?i)\b({keyword})\b")
+            for keyword in self.keyword_colors.keys()
+        }
+
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format the log record with colors for console output.
+
+        Creates a temporary copy of attributes to avoid mutating the original record.
+        """
+        level_color = self.level_colors.get(record.levelno, self.default_color)
+
+        # Get the formatted message (doesn't modify record)
+        message = record.getMessage()
+
+        colored_message = message
+        for keyword, color in self.keyword_colors.items():
+            colored_message = self.keyword_patterns[keyword].sub(
+                f"{color}\\1{level_color}",
+                colored_message,
+            )
+
+        record.timestamp_color = self.timestamp_color
+        record.level_color = level_color
+        record.default_color = self.default_color
+        record.relative_seconds = f"{record.relativeCreated / 1000:.3f}"
+
+        original_msg = record.msg
+        original_args = record.args
+
+        record.msg = colored_message
+        record.args = ()
+
+        try:
+            result = super().format(record)
+        finally:
+            # ALWAYS restore, even if formatting fails
+            record.msg = original_msg
+            record.args = original_args
+
+        return result
+
+
+# TODO Complete the file integration.
+def setup_file_handler(
+    *, file_name: str | os.PathLike, file_logging_level: int = logging.INFO
+) -> None:
+    """
+    Setup a logger file handler that writes logs to a file.
+
+    Args:
+        file_name: Path to the file where logs will be written.
+        file_logging_level: The logging level for the file handler.
+            Accepts standard logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+            Defaults to logging.INFO.
+    """
+    file_handler = logging.FileHandler(file_name)
+    file_handler.setLevel(file_logging_level)
+    file_handler.addFilter(ThreadAwareFilter())
+
+    # date format include milliseconds for better resolution
+
+    default_formatter = logging.Formatter(
+        fmt=_file_format_string,
+    )
+
+    file_handler.setFormatter(default_formatter)
+
+    # we want to add this file handler to the root logger is it is propagated
+    logger = logging.getLogger(rt_logger_name)
+    logger.addHandler(file_handler)
+
+
+def prepare_logger(
+    *,
+    setting: AllowableLogLevels | None,
+    path: str | os.PathLike | None = None,
+):
+    """
+    Prepares the logger based on the setting and optionally sets up the file handler if a path is provided.
+    """
+    detach_logging_handlers()
+    if path is not None:
+        setup_file_handler(file_name=path, file_logging_level=logging.INFO)
+
+    console_handler = logging.StreamHandler()
+    formatter = ColorfulFormatter(fmt=_default_format_string)
+    console_handler.setFormatter(formatter)
+
+    logger = logging.getLogger(rt_logger_name)
+
+    match setting:
+        case "DEBUG":
+            console_handler.setLevel(logging.DEBUG)
+        case "INFO":
+            console_handler.setLevel(logging.INFO)
+        case "WARNING":
+            console_handler.setLevel(logging.WARNING)
+        case "ERROR":
+            console_handler.setLevel(logging.ERROR)
+        case "CRITICAL":
+            console_handler.setLevel(logging.CRITICAL)
+        case "NONE":
+            console_handler.addFilter(lambda x: False)
+        case None:
+            pass
+        case _:
+            raise ValueError("Invalid log level setting")
+
+    logger.addHandler(console_handler)
+
+
+def detach_logging_handlers():
+    """
+    Shuts down the logging system and detaches all logging handlers.
+    """
+    # Get the root logger
+    rt_logger.handlers.clear()
+
+
+def initialize_module_logging(
+    level: AllowableLogLevels | None = None,
+    log_file: str | os.PathLike | None = None,
+) -> None:
+    """
+    Initialize module-level logging (internal). Use enable_logging() for the public API.
+
+    When level/log_file are None, reads from environment variables:
+    - RT_LOG_LEVEL: Sets the logging level
+    - RT_LOG_FILE: Optional path to a log file
+
+    If not set, defaults to INFO level with no log file.
+
+    This sets up shared handlers once with a ThreadAwareFilter that checks
+    each thread's ContextVar to determine what should be logged.
+    """
+
+    env_level_str = (
+        level if level is not None else os.getenv("RT_LOG_LEVEL", "INFO")
+    ).upper()
+    env_log_file = (
+        log_file if log_file is not None else os.getenv("RT_LOG_FILE") or None
+    )
+
+    env_level_int = str_to_log_level.get(env_level_str, str_to_log_level["INFO"])
+
+    _module_logging_level.set(env_level_int)
+    _module_logging_file.set(env_log_file)
+
+    logger = logging.getLogger(rt_logger_name)
+    logger.setLevel(env_level_str)
+
+    # Only skip if there are real handlers (app or user already configured).
+    # NullHandler is added by the library so "No handlers" is never raised.
+    non_null_handlers = [
+        h for h in logger.handlers if not isinstance(h, logging.NullHandler)
+    ]
+    if non_null_handlers:
+        return
+
+    for h in list(logger.handlers):
+        if isinstance(h, logging.NullHandler):
+            logger.removeHandler(h)
+
+    console_handler = logging.StreamHandler()
+    console_handler.addFilter(ThreadAwareFilter())
+    formatter = ColorfulFormatter(fmt=_default_format_string)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # Set up file handler if specified
+    if env_log_file is not None:
+        setup_file_handler(file_name=env_log_file, file_logging_level=logging.INFO)
+
+
+def enable_logging(
+    level: AllowableLogLevels = "INFO",
+    log_file: str | os.PathLike | None = None,
+) -> None:
+    """
+    Opt-in helper to enable Railtracks logging. Call this explicitly from your
+    application entry point (CLI, main.py, server startup); the library never
+    calls it automatically.
+
+    Uses the given level and log_file; when None, reads RT_LOG_LEVEL and
+    RT_LOG_FILE from the environment. Sets up console output (and optional file)
+    with a ThreadAwareFilter for per-thread level control.
+
+    Args:
+        level: Logging level (default "INFO"). Overridden by RT_LOG_LEVEL when None.
+        log_file: Optional path for a log file. Overridden by RT_LOG_FILE when None.
+    """
+    initialize_module_logging(level=level, log_file=log_file)
