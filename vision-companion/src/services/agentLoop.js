@@ -1,12 +1,8 @@
 /**
  * agentLoop.js — Always-on VisionCompanion agent.
  *
- * Two parallel tracks:
- *   Track A (vision): Gemini analyzes the camera frame every 2.5s (scan/read/find overlays).
- *   Track B (voice):  Continuous Web Speech listens for user speech anytime.
- *
- * Voice is ALWAYS on. No mode toggle required to speak.
- * Barge-in is supported: speaking while AI talks cancels TTS and processes new query.
+ * Scan loop runs in ALL modes continuously — provides overlays everywhere.
+ * Voice handler adds 2s cooldown after speaking so scan doesn't compete.
  */
 
 import { useAppStore } from '../store/useAppStore';
@@ -30,6 +26,7 @@ function jaccardSimilarity(a, b) {
 let scanIntervalId = null;
 let isScanRunning = false;
 let isVoiceRunning = false;
+let lastVoiceEndTime = 0; // cooldown: scan waits 2s after voice to avoid competing
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +69,7 @@ function buildDepthContext(depthBuffer, depthWidth, depthHeight) {
   return `Depth (255=nearest,0=farthest): ${readings.join(', ')}`;
 }
 
-// ─── Voice speech handler (shared between onSpeech and barge-in retry) ────────
+// ─── Voice speech handler ─────────────────────────────────────────────────────
 
 async function handleSpeech(transcript, preCapture) {
   if (isVoiceRunning) return;
@@ -85,44 +82,33 @@ async function handleSpeech(transcript, preCapture) {
 
   try {
     const frame = preCapture || await captureFrame(store.videoRef);
+    if (!frame) return;
+
     const { depthBuffer, depthWidth, depthHeight } = store;
     const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
-
     const memories = getRelevantMemories(transcript, 3).map(m => m.content);
 
+    let query = transcript;
     if (store.mode === 'find') {
-      // Stream voice immediately for speed, bbox analysis runs in parallel
-      const textStream = streamVoiceResponse(frame, `Locate: "${transcript}". Tell me exactly where it is and how to reach it.`, memories, depthCtx);
-      store.setAvatarState('speaking');
-      // Fire bbox analysis in background — overlays appear when ready
-      analyzeFrame(frame, transcript, getRelevantMemories(transcript, 5), 'find')
-        .then(result => {
-          if (!result) return;
-          if (result.objects?.length) store.setDetectedObjects(result.objects);
-          handleSafetyAlert(result.safety_alert, store);
-          handleMemoryUpdate(result.memory_update);
-        }).catch(() => {});
-      await streamAndSpeak(textStream);
-    } else {
-      // All other modes: streaming voice response
-      const textStream = streamVoiceResponse(frame, transcript, memories, depthCtx);
-      store.setAvatarState('speaking');
-      await streamAndSpeak(textStream);
+      query = `Locate: "${transcript}". Tell me exactly where it is and how to reach it. Mark it with isTarget: true in your response.`;
     }
 
-    try {
-      await saveConversation({ role: 'user', content: transcript, mode: 'voice' });
-    } catch (_) {}
+    const textStream = streamVoiceResponse(frame, query, memories, depthCtx);
+    store.setAvatarState('speaking');
+    await streamAndSpeak(textStream);
+
+    try { await saveConversation({ role: 'user', content: transcript, mode: store.mode }); } catch (_) {}
   } catch (err) {
     console.error('Voice agent error:', err);
-    await speak('Sorry, something went wrong. Please try again.');
+    try { await speak('Sorry, something went wrong. Please try again.'); } catch (_) {}
   } finally {
     isVoiceRunning = false;
+    lastVoiceEndTime = Date.now();
     store.setAvatarState('idle');
   }
 }
 
-// ─── Track A: Always-On Vision Scan ──────────────────────────────────────────
+// ─── Track A: Always-On Vision Scan (runs in ALL modes) ───────────────────────
 
 export function startAgentLoop() {
   if (scanIntervalId) return;
@@ -130,8 +116,10 @@ export function startAgentLoop() {
 
   scanIntervalId = setInterval(async () => {
     const store = useAppStore.getState();
+    // Skip if voice is active or recently ended (2s cooldown)
     if (isScanRunning || isVoiceRunning) return;
-    if (!store.videoRef || !store.isScanning) return;
+    if (Date.now() - lastVoiceEndTime < 2000) return;
+    if (!store.videoRef) return;
 
     isScanRunning = true;
     store.setIsProcessing(true);
@@ -169,8 +157,6 @@ export function stopAgentLoop() {
 
 export function startVoiceAgent() {
   unlockAudio();
-
-  // Wire TTS hooks so the mic pauses during speech output (prevents echo/self-interrupt)
   registerTTSHooks(onTTSStart, onTTSEnd);
 
   startContinuousListening({
@@ -178,10 +164,8 @@ export function startVoiceAgent() {
       await handleSpeech(transcript, preCapture);
     },
     onBargeIn: async (transcript) => {
-      // Cancel current TTS immediately
       stopSpeaking();
       isVoiceRunning = false;
-      // Small pause to let audio buffers drain
       setTimeout(() => handleSpeech(transcript, null), 100);
     },
     getVideoRef: () => useAppStore.getState().videoRef,
@@ -194,7 +178,7 @@ export function stopVoiceAgent() {
   isVoiceRunning = false;
 }
 
-// ─── READ mode: streaming for instant response ────────────────────────────────
+// ─── READ mode one-shot (streaming) ──────────────────────────────────────────
 
 export async function runOnceRead() {
   const store = useAppStore.getState();
@@ -215,39 +199,7 @@ export async function runOnceRead() {
     console.error('runOnceRead error:', err);
   } finally {
     isVoiceRunning = false;
+    lastVoiceEndTime = Date.now();
     store.setAvatarState('idle');
-  }
-}
-
-// ─── One-shot for internal use ────────────────────────────────────────────────
-
-export async function runOnce(mode, userQuery = null) {
-  const store = useAppStore.getState();
-  if (!store.videoRef || isScanRunning) return null;
-
-  isScanRunning = true;
-  store.setIsProcessing(true);
-  store.setAvatarState('thinking');
-
-  try {
-    const base64 = await captureFrame(store.videoRef);
-    if (!base64) return null;
-
-    const memories = getRelevantMemories(userQuery || mode, 5);
-    const result = await analyzeFrame(base64, userQuery, memories, mode);
-    if (!result) return null;
-
-    if (result.objects?.length) store.setDetectedObjects(result.objects);
-    if (result.caption) store.setCurrentCaption(result.caption);
-    handleSafetyAlert(result.safety_alert, store);
-    handleMemoryUpdate(result.memory_update);
-
-    return result;
-  } catch (err) {
-    console.error('runOnce error:', err);
-    return null;
-  } finally {
-    isScanRunning = false;
-    store.setIsProcessing(false);
   }
 }

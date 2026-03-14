@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Scan, BookOpen, Search, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
-import { stopAgentLoop, startAgentLoop, runOnceRead, stopVoiceAgent } from '../services/agentLoop';
+import { stopAgentLoop, runOnceRead, stopVoiceAgent } from '../services/agentLoop';
 import { stopSpeaking, setSpeakerMuted } from '../services/ttsService';
 import { setMicMuted } from '../services/continuousListener';
 
@@ -15,7 +15,7 @@ const MODE_BUTTONS = [
 export default function ControlBar() {
   const [flashId, setFlashId] = useState(null);
   const {
-    mode, setMode, setIsScanning, setAvatarState,
+    mode, setMode, setAvatarState,
     micMuted, setMicMuted: storeMicMuted,
     speakerMuted, setSpeakerMuted: storeSpeakerMuted,
     setScreen, setCurrentCaption,
@@ -31,23 +31,14 @@ export default function ControlBar() {
     stopSpeaking();
     flash(newMode);
     setMode(newMode);
-
-    if (newMode === 'scan') {
-      setIsScanning(true);
-      setAvatarState('idle');
-      startAgentLoop();
+    // Scan loop always keeps running for overlays — only mode label changes
+    if (newMode === 'read') {
+      await runOnceRead();
+    } else if (newMode === 'find') {
+      setCurrentCaption('Say what you\'re looking for...');
+      setAvatarState('listening');
     } else {
-      setIsScanning(false);
-      stopAgentLoop();
       setAvatarState('idle');
-
-      if (newMode === 'read') {
-        await runOnceRead();
-      } else if (newMode === 'find') {
-        // Prompt user to speak — voice agent will handle the query
-        setCurrentCaption('Say what you\'re looking for...');
-        setAvatarState('listening');
-      }
     }
   };
 
