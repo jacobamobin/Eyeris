@@ -12,8 +12,8 @@
 import { useAppStore } from '../store/useAppStore';
 import { captureFrame } from '../utils/frameCapture';
 import { analyzeFrame, streamVoiceResponse } from './geminiService';
-import { speak, stopSpeaking, unlockAudio, streamAndSpeak } from './ttsService';
-import { startContinuousListening, stopContinuousListening } from './continuousListener';
+import { speak, stopSpeaking, unlockAudio, streamAndSpeak, registerTTSHooks } from './ttsService';
+import { startContinuousListening, stopContinuousListening, onTTSStart, onTTSEnd } from './continuousListener';
 import { getRelevantMemories, saveMemory, saveConversation, pruneOldMemories } from './memoryService';
 import { AGENT_INTERVAL_MS } from '../config';
 
@@ -148,6 +148,9 @@ export function stopAgentLoop() {
 
 export function startVoiceAgent() {
   unlockAudio();
+
+  // Wire TTS hooks so the mic pauses during speech output (prevents echo/self-interrupt)
+  registerTTSHooks(onTTSStart, onTTSEnd);
 
   startContinuousListening({
     onSpeech: async (transcript, preCapture) => {

@@ -14,6 +14,7 @@ let restartTimer = null;
 let micMuted = false;
 
 let latestFrameCapture = null; // pre-captured base64 from interim speech
+let _ttsJustEnded = null;      // timestamp — suppress echo after TTS stops
 
 let _onSpeech = null;
 let _onBargeIn = null;
@@ -22,6 +23,21 @@ let _getIsSpeaking = null;
 
 export function setMicMuted(muted) {
   micMuted = muted;
+}
+
+// Called by ttsService when TTS starts — abort recognition so AI voice isn't picked up
+export function onTTSStart() {
+  if (recognition) {
+    try { recognition.abort(); } catch (_) {}
+  }
+}
+
+// Called by ttsService when TTS ends — wait for echo to clear, then restart
+export function onTTSEnd() {
+  _ttsJustEnded = Date.now();
+  if (active) {
+    restartTimer = setTimeout(_start, 450); // 450ms gap clears echo
+  }
 }
 
 export function startContinuousListening({ onSpeech, onBargeIn, getVideoRef, getIsSpeaking }) {
@@ -82,21 +98,24 @@ function _start() {
       return;
     }
 
-    // Final result
+    // Final result — apply quality filters before firing
     const transcript = result[0].transcript.trim();
-    if (transcript.length <= 1) return;
+    const confidence = result[0].confidence ?? 1;
+    const wordCount = transcript.split(/\s+/).filter(Boolean).length;
+
+    // Reject: muted, too short, too few words, low confidence
     if (micMuted) return;
+    if (transcript.length < 6) return;
+    if (wordCount < 2) return;
+    if (confidence < 0.60) return;
 
-    const isSpeaking = _getIsSpeaking?.() ?? false;
+    // Reject if it looks like the AI echoed its own output back
+    // (very short pause after speaking → skip this result)
+    if (_ttsJustEnded && Date.now() - _ttsJustEnded < 600) return;
 
-    if (isSpeaking) {
-      // Barge-in: user spoke while AI was talking
-      if (_onBargeIn) _onBargeIn(transcript);
-    } else {
-      const preCapture = latestFrameCapture;
-      latestFrameCapture = null;
-      if (_onSpeech) _onSpeech(transcript, preCapture);
-    }
+    const preCapture = latestFrameCapture;
+    latestFrameCapture = null;
+    if (_onSpeech) _onSpeech(transcript, preCapture);
   };
 
   recognition.onerror = (event) => {

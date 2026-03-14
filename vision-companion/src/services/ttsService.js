@@ -1,6 +1,17 @@
 import { ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ELEVENLABS_MODEL } from '../config';
 import { useAppStore } from '../store/useAppStore';
 
+// Callbacks registered by continuousListener to avoid circular imports
+let _onTTSStart = null;
+let _onTTSEnd = null;
+export function registerTTSHooks(onStart, onEnd) {
+  _onTTSStart = onStart;
+  _onTTSEnd = onEnd;
+}
+
+function onTTSStart() { try { _onTTSStart?.(); } catch (_) {} }
+function onTTSEnd()   { try { _onTTSEnd?.();   } catch (_) {} }
+
 // Global AudioContext — created once on user gesture (unlockAudio), never recreated.
 let audioCtx = null;
 let currentSource = null;
@@ -48,6 +59,7 @@ export async function speak(text) {
   store.setIsSpeaking(true);
   store.setAvatarState('speaking');
   lastSpokenText = text;
+  try { onTTSStart(); } catch (_) {}
 
   try {
     const audioBuffer = await fetchAndDecodeAudio(text);
@@ -56,7 +68,6 @@ export async function speak(text) {
     }
   } catch (err) {
     console.warn('ElevenLabs TTS failed:', err.message);
-    // SpeechSynthesis fallback
     try {
       await speakWithSynthesis(text);
     } catch (err2) {
@@ -67,6 +78,7 @@ export async function speak(text) {
       store.setIsSpeaking(false);
       store.setAvatarState('idle');
     }
+    try { onTTSEnd(); } catch (_) {}
   }
 }
 
@@ -80,8 +92,10 @@ export async function streamAndSpeak(textStream) {
   }
 
   isStopped = false;
+  lastSpokenText = '';
   const store = useAppStore.getState();
   store.setIsSpeaking(true);
+  try { onTTSStart(); } catch (_) {}
 
   let buffer = '';
   const audioQueue = []; // Array of Promise<AudioBuffer|null>
@@ -123,6 +137,7 @@ export async function streamAndSpeak(textStream) {
       store.setIsSpeaking(false);
       store.setAvatarState('idle');
     }
+    try { onTTSEnd(); } catch (_) {}
   }
 }
 
