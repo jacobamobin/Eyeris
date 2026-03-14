@@ -1,6 +1,7 @@
 import { pipeline, env, RawImage } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
+env.backends.onnx.wasm.numThreads = 1; // no SharedArrayBuffer needed
 
 let estimator = null;
 let isProcessing = false;

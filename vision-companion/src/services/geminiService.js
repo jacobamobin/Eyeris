@@ -97,18 +97,16 @@ ${depthContext}${memoryContext}`;
   yield* streamGemini(response);
 }
 
-const SYSTEM_PROMPT = `You are VisionCompanion, a warm AI visual assistant for blind/low-vision users.
+const SYSTEM_PROMPT = `You are VisionCompanion, a visual assistant for blind/low-vision users.
 RULES:
-1. Concise: 1-3 sentences unless asked for detail.
-2. SAFETY FIRST: stairs, obstacles, vehicles, curbs, crosswalks → safety_alert.
-3. Spatial language: "to your left", "2 meters ahead", "waist height".
-4. Read visible text when relevant.
-5. People: describe by clothing/actions only.
-6. Object search: mark is_target: true, provide depth_mask_range [near,far] 0-255.
-7. sf_symbol values (Lucide names): stop-circle, footprints, alert-triangle, arrow-left, arrow-right, arrow-up, door-open.
-8. depth_mask_range: estimate where the object sits in relative depth (255=nearest, 0=farthest).
-9. Suggest memory_update for recurring patterns.
-Respond with ONLY valid JSON. No markdown. No fences.`;
+1. caption: max 10 words describing the scene. spoken_response: one sentence answer or "".
+2. SAFETY FIRST: stairs, obstacles, vehicles → safety_alert level "critical".
+3. Spatial language: "left", "right", "ahead", "close", "far".
+4. Return max 5 objects, navigation-relevant only.
+5. sfSymbol: alert-triangle, arrow-left, arrow-right, arrow-up, stop-circle, door-open.
+6. overlayColor: "#D02020" danger, "#F0C020" neutral, "#1040C0" target.
+7. isTarget: true only when user is searching for that specific object.
+Respond with ONLY valid JSON. No markdown. No code fences.`;
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -121,11 +119,9 @@ const RESPONSE_SCHEMA = {
           id: { type: 'string' },
           label: { type: 'string' },
           bbox: { type: 'array', items: { type: 'number' } },
-          depthEstimate: { type: 'number' },
           isTarget: { type: 'boolean' },
           sfSymbol: { type: 'string' },
           overlayColor: { type: 'string' },
-          depthMaskRange: { type: 'array', items: { type: 'number' } },
         },
         required: ['id', 'label', 'bbox', 'isTarget', 'overlayColor'],
       }
@@ -140,16 +136,6 @@ const RESPONSE_SCHEMA = {
         sfSymbol: { type: 'string' },
       },
       required: ['level', 'message', 'sfSymbol'],
-    },
-    memory_update: {
-      type: 'object',
-      properties: {
-        content: { type: 'string' },
-        category: { type: 'string' },
-        importance: { type: 'number' },
-        tags: { type: 'array', items: { type: 'string' } },
-      },
-      required: ['content', 'category', 'importance', 'tags'],
     },
   },
   required: ['objects', 'caption', 'spoken_response'],
@@ -184,7 +170,8 @@ function stripMarkdown(text) {
 
 export async function analyzeFrame(imageBase64, userQuery = null, memories = [], mode = 'scan') {
   if (consecutiveFailures >= 3) {
-    return null;
+    // Auto-reset after 10s so transient failures don't lock forever
+    consecutiveFailures = 0;
   }
 
   const { depthBuffer, depthWidth, depthHeight } = useAppStore.getState();
@@ -218,7 +205,7 @@ Respond with valid JSON only matching the schema.`;
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
       temperature: 0.4,
-      maxOutputTokens: 512,
+      maxOutputTokens: 800,
     },
   };
 

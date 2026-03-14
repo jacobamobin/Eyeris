@@ -7,7 +7,6 @@ export default defineConfig({
     // Cross-origin isolation required for WebGPU (Depth Anything V2) and SharedArrayBuffer
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
   },
   optimizeDeps: {
