@@ -26,7 +26,8 @@ function jaccardSimilarity(a, b) {
 let scanIntervalId = null;
 let isScanRunning = false;
 let isVoiceRunning = false;
-let lastVoiceEndTime = 0; // cooldown: scan waits 2s after voice to avoid competing
+let lastVoiceEndTime = 0;
+let postVoiceScanTimer = null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,33 @@ async function handleSpeech(transcript, preCapture) {
     isVoiceRunning = false;
     lastVoiceEndTime = Date.now();
     store.setAvatarState('idle');
+    // Fire an immediate scan once audio settles so overlays refresh right away
+    if (postVoiceScanTimer) clearTimeout(postVoiceScanTimer);
+    postVoiceScanTimer = setTimeout(() => { lastVoiceEndTime = 0; runScanOnce(); }, 300);
+  }
+}
+
+async function runScanOnce() {
+  if (isScanRunning || isVoiceRunning) return;
+  isScanRunning = true;
+  const store = useAppStore.getState();
+  store.setIsProcessing(true);
+  try {
+    const base64 = await captureFrame(store.videoRef);
+    if (!base64) return;
+    const memories = getRelevantMemories('scene navigation', 3);
+    const result = await analyzeFrame(base64, null, memories, 'scan');
+    if (!result) return;
+    if (result.objects?.length) store.setDetectedObjects(result.objects);
+    if (result.caption && jaccardSimilarity(result.caption, store.currentCaption) < 0.65) {
+      store.setCurrentCaption(result.caption);
+    }
+    handleSafetyAlert(result.safety_alert, store);
+    handleMemoryUpdate(result.memory_update);
+  } catch (_) {}
+  finally {
+    isScanRunning = false;
+    store.setIsProcessing(false);
   }
 }
 
@@ -201,5 +229,7 @@ export async function runOnceRead() {
     isVoiceRunning = false;
     lastVoiceEndTime = Date.now();
     store.setAvatarState('idle');
+    if (postVoiceScanTimer) clearTimeout(postVoiceScanTimer);
+    postVoiceScanTimer = setTimeout(() => { lastVoiceEndTime = 0; runScanOnce(); }, 300);
   }
 }
