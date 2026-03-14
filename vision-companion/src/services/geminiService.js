@@ -218,7 +218,7 @@ Respond with valid JSON only matching the schema.`;
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
       temperature: 0.4,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 512,
     },
   };
 

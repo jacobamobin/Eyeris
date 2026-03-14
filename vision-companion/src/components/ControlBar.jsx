@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Scan, BookOpen, Search, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { stopAgentLoop, startAgentLoop, runOnceRead, stopVoiceAgent } from '../services/agentLoop';
@@ -8,10 +9,11 @@ import { setMicMuted } from '../services/continuousListener';
 const MODE_BUTTONS = [
   { id: 'scan', label: 'SCAN', Icon: Scan, color: 'bg-[#1040C0]', activeText: 'text-white' },
   { id: 'read', label: 'READ', Icon: BookOpen, color: 'bg-[#F0C020]', activeText: 'text-[#121212]' },
-  { id: 'find', label: 'FIND', Icon: Search, color: 'bg-[#121212]', activeText: 'text-white' },
+  { id: 'find', label: 'FIND', Icon: Search, color: 'bg-white', activeText: 'text-[#121212]' },
 ];
 
 export default function ControlBar() {
+  const [flashId, setFlashId] = useState(null);
   const {
     mode, setMode, setIsScanning, setAvatarState,
     micMuted, setMicMuted: storeMicMuted,
@@ -19,9 +21,15 @@ export default function ControlBar() {
     setScreen, setCurrentCaption,
   } = useAppStore();
 
+  const flash = (id) => {
+    setFlashId(id);
+    setTimeout(() => setFlashId(null), 600);
+  };
+
   const handleModeChange = async (newMode) => {
     if (newMode === mode) return;
     stopSpeaking();
+    flash(newMode);
     setMode(newMode);
 
     if (newMode === 'scan') {
@@ -69,23 +77,26 @@ export default function ControlBar() {
       aria-label="App controls"
     >
       {/* Left group: mode buttons */}
-      {MODE_BUTTONS.map(({ id, label, Icon, color, activeText }) => (
-        <motion.button
-          key={id}
-          onClick={() => handleModeChange(id)}
-          whileTap={{ x: 2, y: 2 }}
-          className={`flex-1 py-5 flex flex-col items-center gap-1 font-black uppercase tracking-wider text-[10px] border-r-2 border-[#121212] transition-colors ${
-            mode === id
-              ? `${color} ${activeText} shadow-none`
-              : 'bg-[#121212] text-white/70'
-          }`}
-          aria-label={`${label} mode`}
-          aria-pressed={mode === id}
-        >
-          <Icon size={20} strokeWidth={2.5} />
-          <span>{label}</span>
-        </motion.button>
-      ))}
+      {MODE_BUTTONS.map(({ id, label, Icon, color, activeText }) => {
+        const isActive = mode === id || flashId === id;
+        return (
+          <motion.button
+            key={id}
+            onClick={() => handleModeChange(id)}
+            whileTap={{ scale: 0.93, x: 2, y: 2 }}
+            className={`flex-1 py-5 flex flex-col items-center gap-1 font-black uppercase tracking-wider text-[10px] border-r-2 border-[#121212] transition-colors ${
+              isActive
+                ? `${color} ${activeText} shadow-none`
+                : 'bg-[#121212] text-white/70'
+            }`}
+            aria-label={`${label} mode`}
+            aria-pressed={mode === id}
+          >
+            <Icon size={20} strokeWidth={2.5} />
+            <span>{label}</span>
+          </motion.button>
+        );
+      })}
 
       {/* Divider */}
       <div className="w-[2px] bg-[#333]" />

@@ -5,7 +5,7 @@ export const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
 export const GEMINI_MODEL = 'gemini-2.5-flash';
 export const DEPTH_MODEL = 'onnx-community/depth-anything-v2-small';
-export const AGENT_INTERVAL_MS = 2500;
+export const AGENT_INTERVAL_MS = 1500;
 export const DEPTH_INTERVAL_MS = 200;
 export const ELEVENLABS_MODEL = 'eleven_flash_v2_5';
 

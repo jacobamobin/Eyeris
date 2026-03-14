@@ -60,21 +60,14 @@ export default function OverlayCanvas() {
       const color = obj.overlayColor || '#F0C020';
       const rgb = hexToRgb(color);
 
-      // Depth range mask overlay (if LLM provided depthMaskRange)
-      if (obj.depthMaskRange && depthBuffer) {
-        const mask = createDepthMask(
-          obj.bbox,
-          obj.depthMaskRange,
-          depthBuffer, depthWidth, depthHeight,
-          W, H,
-          rgb
-        );
+      // Depth mask — auto-computed from bbox center median depth
+      if (depthBuffer) {
+        const mask = createDepthMask(obj.bbox, null, depthBuffer, depthWidth, depthHeight, W, H, rgb);
         if (mask) {
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = mask.imageData.width;
           tempCanvas.height = mask.imageData.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          tempCtx.putImageData(mask.imageData, 0, 0);
+          tempCanvas.getContext('2d').putImageData(mask.imageData, 0, 0);
           ctx.drawImage(tempCanvas, mask.x, mask.y);
         }
       }
