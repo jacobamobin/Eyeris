@@ -1,4 +1,4 @@
-import { pipeline, env } from '@huggingface/transformers';
+import { pipeline, env, RawImage } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
 
@@ -10,6 +10,7 @@ async function initModel() {
   try {
     estimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
       device: 'webgpu',
+      dtype: 'fp16',
       progress_callback: (p) => {
         if (p.status === 'progress') {
           self.postMessage({ type: 'loading', progress: Math.round(p.progress) });
@@ -44,7 +45,13 @@ self.onmessage = async (e) => {
     isProcessing = true;
     try {
       const { imageBitmap } = e.data;
-      const result = await estimator(imageBitmap);
+      const { width: bmpW, height: bmpH } = imageBitmap;
+      const offscreen = new OffscreenCanvas(bmpW, bmpH);
+      offscreen.getContext('2d').drawImage(imageBitmap, 0, 0);
+      const imageData = offscreen.getContext('2d').getImageData(0, 0, bmpW, bmpH);
+      imageBitmap.close();
+      const rawImage = new RawImage(imageData.data, bmpW, bmpH, 4);
+      const result = await estimator(rawImage);
       const depthData = result.depth.data;
       // Normalize to Uint8Array (0-255)
       const uint8 = new Uint8Array(depthData.length);
