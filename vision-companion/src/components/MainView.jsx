@@ -9,6 +9,7 @@ import AvatarView from './AvatarView';
 import ControlBar from './ControlBar';
 import { useAppStore } from '../store/useAppStore';
 import { startAgentLoop, stopAgentLoop, startVoiceAgent, stopVoiceAgent } from '../services/agentLoop';
+import { stopDepthService } from '../services/depthService';
 
 export default function MainView() {
   const { cameraError, cameraReady } = useAppStore();
@@ -21,6 +22,7 @@ export default function MainView() {
     return () => {
       stopAgentLoop();
       stopVoiceAgent();
+      stopDepthService();
     };
   }, [cameraReady]);
 
