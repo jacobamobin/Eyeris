@@ -5,6 +5,8 @@ import StatusIndicator from './StatusIndicator';
 import OverlayCanvas from './OverlayCanvas';
 import CaptionBar from './CaptionBar';
 import SafetyBanner from './SafetyBanner';
+import AvatarView from './AvatarView';
+import ControlBar from './ControlBar';
 import { useAppStore } from '../store/useAppStore';
 import { startAgentLoop, stopAgentLoop } from '../services/agentLoop';
 
@@ -45,8 +47,12 @@ export default function MainView() {
           <DepthMiniMap />
           <StatusIndicator />
           <CaptionBar />
+          <AvatarView />
         </>
       )}
+
+      {/* Control Bar - always visible when app is open */}
+      <ControlBar />
 
       {/* Loading state when camera not ready */}
       {!cameraReady && !cameraError && (
