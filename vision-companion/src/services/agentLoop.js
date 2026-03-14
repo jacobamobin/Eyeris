@@ -88,23 +88,23 @@ async function handleSpeech(transcript, preCapture) {
     const { depthBuffer, depthWidth, depthHeight } = store;
     const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
 
+    const memories = getRelevantMemories(transcript, 3).map(m => m.content);
+
     if (store.mode === 'find') {
-      // Find mode: use structured analysis to get bboxes + spoken_response
-      const memories = getRelevantMemories(transcript, 5);
-      const result = await analyzeFrame(frame, transcript, memories, 'find');
-      if (result) {
-        if (result.objects?.length) store.setDetectedObjects(result.objects);
-        if (result.caption) store.setCurrentCaption(result.caption);
-        handleSafetyAlert(result.safety_alert, store);
-        handleMemoryUpdate(result.memory_update);
-        if (result.spoken_response) {
-          store.setAvatarState('speaking');
-          await speak(result.spoken_response);
-        }
-      }
+      // Stream voice immediately for speed, bbox analysis runs in parallel
+      const textStream = streamVoiceResponse(frame, `Locate: "${transcript}". Tell me exactly where it is and how to reach it.`, memories, depthCtx);
+      store.setAvatarState('speaking');
+      // Fire bbox analysis in background — overlays appear when ready
+      analyzeFrame(frame, transcript, getRelevantMemories(transcript, 5), 'find')
+        .then(result => {
+          if (!result) return;
+          if (result.objects?.length) store.setDetectedObjects(result.objects);
+          handleSafetyAlert(result.safety_alert, store);
+          handleMemoryUpdate(result.memory_update);
+        }).catch(() => {});
+      await streamAndSpeak(textStream);
     } else {
       // All other modes: streaming voice response
-      const memories = getRelevantMemories(transcript, 3).map(m => m.content);
       const textStream = streamVoiceResponse(frame, transcript, memories, depthCtx);
       store.setAvatarState('speaking');
       await streamAndSpeak(textStream);
@@ -194,7 +194,32 @@ export function stopVoiceAgent() {
   isVoiceRunning = false;
 }
 
-// ─── One-shot for READ / FIND modes ──────────────────────────────────────────
+// ─── READ mode: streaming for instant response ────────────────────────────────
+
+export async function runOnceRead() {
+  const store = useAppStore.getState();
+  if (!store.videoRef || isVoiceRunning) return;
+  isVoiceRunning = true;
+  store.setAvatarState('thinking');
+
+  try {
+    const frame = await captureFrame(store.videoRef);
+    if (!frame) return;
+    const memories = getRelevantMemories('read text', 3).map(m => m.content);
+    const { depthBuffer, depthWidth, depthHeight } = store;
+    const depthCtx = buildDepthContext(depthBuffer, depthWidth, depthHeight);
+    const textStream = streamVoiceResponse(frame, 'Read all visible text in the image, word for word.', memories, depthCtx);
+    store.setAvatarState('speaking');
+    await streamAndSpeak(textStream);
+  } catch (err) {
+    console.error('runOnceRead error:', err);
+  } finally {
+    isVoiceRunning = false;
+    store.setAvatarState('idle');
+  }
+}
+
+// ─── One-shot for internal use ────────────────────────────────────────────────
 
 export async function runOnce(mode, userQuery = null) {
   const store = useAppStore.getState();

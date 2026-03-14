@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore';
 import { Scan, BookOpen, Search, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
-import { stopAgentLoop, startAgentLoop, runOnce, stopVoiceAgent } from '../services/agentLoop';
-import { speak, stopSpeaking, setSpeakerMuted } from '../services/ttsService';
+import { stopAgentLoop, startAgentLoop, runOnceRead, stopVoiceAgent } from '../services/agentLoop';
+import { stopSpeaking, setSpeakerMuted } from '../services/ttsService';
 import { setMicMuted } from '../services/continuousListener';
 
 const MODE_BUTTONS = [
@@ -34,14 +34,7 @@ export default function ControlBar() {
       setAvatarState('idle');
 
       if (newMode === 'read') {
-        const result = await runOnce('read', null);
-        if (result?.spoken_response) {
-          setAvatarState('speaking');
-          await speak(result.spoken_response);
-          setAvatarState('idle');
-        } else {
-          setAvatarState('idle');
-        }
+        await runOnceRead();
       } else if (newMode === 'find') {
         // Prompt user to speak — voice agent will handle the query
         setCurrentCaption('Say what you\'re looking for...');
