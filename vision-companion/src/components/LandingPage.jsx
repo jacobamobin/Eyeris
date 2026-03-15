@@ -4,6 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import {
   Eye, Zap, Mic, Shield, Brain, Globe,
   Scan, BookOpen, Search, AudioLines, AlertTriangle,
+  Layers, Crosshair, Volume2, Navigation,
 } from 'lucide-react';
 import OnboardingModal from './OnboardingModal';
 import { getPreference, savePreference } from '../services/memoryService';
@@ -41,6 +42,37 @@ const MODE_BUTTONS = [
   { id: 'scan', label: 'SCAN', Icon: Scan, color: 'bg-[#1040C0]', activeText: 'text-white' },
   { id: 'read', label: 'READ', Icon: BookOpen, color: 'bg-[#F0C020]', activeText: 'text-[#121212]' },
   { id: 'find', label: 'FIND', Icon: Search, color: 'bg-white', activeText: 'text-[#121212]' },
+];
+
+const DIFFERENTIATORS = [
+  {
+    icon: Layers,
+    them: 'ChatGPT describes a photo you upload.',
+    us: 'Eyeris draws bounding boxes and depth-colored silhouette overlays directly onto your live camera feed — you see exactly what it sees.',
+    label: 'LIVE VISUAL OVERLAYS',
+    accent: '#1040C0',
+  },
+  {
+    icon: AlertTriangle,
+    them: 'AI chatbots wait for you to ask.',
+    us: 'Eyeris detects stairs, vehicles, and obstacles automatically and fires a haptic vibration + spoken warning — before you even notice.',
+    label: 'PROACTIVE HAZARD ALERTS',
+    accent: '#D02020',
+  },
+  {
+    icon: Navigation,
+    them: '"There\'s a bench somewhere in the scene."',
+    us: '"Bench to your right, 2.8 meters ahead." On-device depth sensing turns every object into a spatial direction with a real distance.',
+    label: 'SPATIAL AWARENESS',
+    accent: '#F0C020',
+  },
+  {
+    icon: Volume2,
+    them: 'Type a question. Wait. Read the answer.',
+    us: 'Just talk. Eyeris is always listening, responds in under a second with a natural voice, and remembers your last few exchanges.',
+    label: 'ALWAYS-ON VOICE',
+    accent: '#1040C0',
+  },
 ];
 
 const FEATURES = [
@@ -568,6 +600,71 @@ export default function LandingPage() {
               >
                 <div className="text-5xl sm:text-6xl font-black text-[#121212] uppercase tracking-tighter">{item.stat}</div>
                 <div className="mt-2 text-sm font-bold uppercase tracking-wider text-[#121212] opacity-80">{item.label}</div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Why Not Just ChatGPT ──────────────── */}
+      <section className="bg-[#121212] py-20 px-6 sm:px-12 border-b-4 border-[#1040C0]">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-4">
+            <div className="inline-block bg-[#D02020] text-white text-xs font-bold uppercase tracking-widest px-3 py-1.5 border-2 border-white/20 mb-6">
+              NOT JUST AI CHAT
+            </div>
+            <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tighter text-white leading-tight">
+              WHAT MAKES<br />
+              <span className="text-[#F0C020]">EYERIS DIFFERENT</span>
+            </h2>
+            <p className="mt-4 text-white/60 font-medium text-base max-w-xl">
+              ChatGPT can describe a photo. Eyeris inhabits your camera in real time and acts on what it sees — without you having to ask.
+            </p>
+          </div>
+
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-px bg-white/10">
+            {DIFFERENTIATORS.map((d, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-40px' }}
+                transition={{ duration: 0.35, delay: i * 0.08 }}
+                className="bg-[#121212] p-8 relative group"
+              >
+                {/* Accent bar */}
+                <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ backgroundColor: d.accent }} />
+
+                <div className="flex items-start gap-5">
+                  <div
+                    className="w-11 h-11 flex-shrink-0 flex items-center justify-center border-2 border-white/20"
+                    style={{ backgroundColor: d.accent }}
+                  >
+                    <d.icon size={20} color={d.accent === '#F0C020' ? '#121212' : 'white'} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: d.accent }}>
+                      {d.label}
+                    </div>
+                    {/* Comparison */}
+                    <div className="mb-3 flex items-start gap-2">
+                      <div className="flex-shrink-0 w-4 h-4 bg-white/10 flex items-center justify-center mt-0.5">
+                        <span className="text-white/40 text-[8px] font-black">✕</span>
+                      </div>
+                      <p className="text-white/40 text-sm font-medium leading-relaxed line-through decoration-white/20">
+                        {d.them}
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5" style={{ backgroundColor: d.accent }}>
+                        <span className="text-[8px] font-black" style={{ color: d.accent === '#F0C020' ? '#121212' : 'white' }}>✓</span>
+                      </div>
+                      <p className="text-white text-sm font-medium leading-relaxed">
+                        {d.us}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             ))}
           </div>
