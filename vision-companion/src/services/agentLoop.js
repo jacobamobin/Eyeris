@@ -28,6 +28,7 @@ let isScanRunning = false;
 let isVoiceRunning = false;
 let lastVoiceEndTime = 0;
 let postVoiceScanTimer = null;
+let userHasSpoken = false; // suppress scan captions until user speaks
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ async function handleSpeech(transcript, preCapture) {
   isVoiceRunning = true;
 
   const store = useAppStore.getState();
+  userHasSpoken = true;
   store.setAvatarState('thinking');
   store.setUserQuery(transcript);
   store.setCurrentCaption(`"${transcript}"`);
@@ -146,7 +148,7 @@ export function startAgentLoop() {
         console.log('Scan: setting', result.objects.length, 'objects');
         store.setDetectedObjects(result.objects);
       }
-      if (result.caption && jaccardSimilarity(result.caption, store.currentCaption) < 0.65) {
+      if (userHasSpoken && result.caption && jaccardSimilarity(result.caption, store.currentCaption) < 0.65) {
         store.setCurrentCaption(result.caption);
       }
       handleSafetyAlert(result.safety_alert, store);
@@ -168,9 +170,18 @@ export function stopAgentLoop() {
 
 // ─── Track B: Always-On Voice (streaming, barge-in) ──────────────────────────
 
-export function startVoiceAgent() {
+export async function startVoiceAgent() {
   unlockAudio();
   registerTTSHooks(onTTSStart, onTTSEnd);
+
+  // Greet the user on launch instead of immediately scanning captions
+  const store = useAppStore.getState();
+  store.setCurrentCaption('Hey, how can I help?');
+  try {
+    store.setAvatarState('speaking');
+    await speak('Hey, how can I help?');
+  } catch (_) {}
+  store.setAvatarState('idle');
 
   startContinuousListening({
     onSpeech: async (transcript, preCapture) => {

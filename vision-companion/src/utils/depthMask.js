@@ -1,4 +1,4 @@
-export function createDepthMask(bbox, _depthMaskRange, depthBuffer, depthWidth, depthHeight, canvasWidth, canvasHeight, color) {
+export function createDepthMask(bbox, _depthMaskRange, depthBuffer, depthWidth, depthHeight, canvasWidth, canvasHeight, color, label) {
   if (!depthBuffer) return null;
   const [yMin, xMin, yMax, xMax] = bbox;
 
@@ -32,7 +32,10 @@ export function createDepthMask(bbox, _depthMaskRange, depthBuffer, depthWidth, 
   const lo = Math.max(0, median - threshold);
   const hi = Math.min(255, median + threshold);
 
-  const [r, g, b] = color;
+  // People get a subtle gray overlay; everything else gets the object color
+  const isPerson = label && label.toLowerCase().includes('person');
+  const [r, g, b] = isPerson ? [100, 100, 100] : color;
+  const alpha = isPerson ? 130 : 140;
   const imageData = new ImageData(pxW, pxH);
 
   for (let py = 0; py < pxH; py++) {
@@ -47,7 +50,7 @@ export function createDepthMask(bbox, _depthMaskRange, depthBuffer, depthWidth, 
         imageData.data[idx] = r;
         imageData.data[idx + 1] = g;
         imageData.data[idx + 2] = b;
-        imageData.data[idx + 3] = 140;
+        imageData.data[idx + 3] = alpha;
       }
     }
   }

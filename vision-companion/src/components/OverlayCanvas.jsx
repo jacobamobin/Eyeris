@@ -62,7 +62,7 @@ export default function OverlayCanvas() {
 
       // Depth mask — auto-computed from bbox center median depth
       if (depthBuffer) {
-        const mask = createDepthMask(obj.bbox, null, depthBuffer, depthWidth, depthHeight, W, H, rgb);
+        const mask = createDepthMask(obj.bbox, null, depthBuffer, depthWidth, depthHeight, W, H, rgb, obj.label);
         if (mask) {
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = mask.imageData.width;
