@@ -6,7 +6,7 @@ import {
   Scan, BookOpen, Search, AudioLines, AlertTriangle,
 } from 'lucide-react';
 import OnboardingModal from './OnboardingModal';
-import { getPreference } from '../services/memoryService';
+import { getPreference, savePreference } from '../services/memoryService';
 import { unlockAudio } from '../services/ttsService';
 
 // ── Data ──────────────────────────────────────────────
@@ -489,7 +489,7 @@ export default function LandingPage() {
         <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 py-16 lg:py-20 z-10 relative">
           <div className="relative z-10 max-w-xl">
             <div className="inline-block bg-[#1040C0] text-white px-4 py-2 text-sm font-bold uppercase tracking-widest border-2 border-[#121212] shadow-[4px_4px_0px_0px_#121212] mb-8">
-              AI Visual Assistant
+              Eyeris — AI Visual Assistant
             </div>
 
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black uppercase tracking-tighter leading-[0.9] text-[#121212] mb-8">
@@ -525,7 +525,7 @@ export default function LandingPage() {
                 onClick={handleLaunch}
                 whileTap={{ x: 2, y: 2 }}
                 className="bg-[#121212] text-[#F0F0F0] px-8 py-4 text-lg font-bold uppercase tracking-wider border-2 border-[#121212] shadow-[6px_6px_0px_0px_#D02020] hover:shadow-[8px_8px_0px_0px_#D02020] transition-shadow"
-                aria-label="Launch VisionCompanion camera app"
+                aria-label="Launch Eyeris camera app"
               >
                 LAUNCH APP →
               </motion.button>
@@ -648,9 +648,9 @@ export default function LandingPage() {
             onClick={handleLaunch}
             whileTap={{ x: 2, y: 2 }}
             className="bg-[#F0F0F0] text-[#121212] px-12 py-5 text-xl font-black uppercase tracking-wider border-4 border-[#121212] shadow-[8px_8px_0px_0px_#121212] hover:shadow-[10px_10px_0px_0px_#121212] transition-shadow"
-            aria-label="Launch VisionCompanion"
+            aria-label="Launch Eyeris"
           >
-            LAUNCH VISION COMPANION →
+            LAUNCH EYERIS →
           </motion.button>
         </div>
       </section>
@@ -662,10 +662,18 @@ export default function LandingPage() {
             <div className="w-10 h-10 bg-[#1040C0] rounded-full border-2 border-white flex items-center justify-center">
               <Eye size={20} color="white" />
             </div>
-            <span className="font-black text-xl uppercase tracking-tighter">VISION COMPANION</span>
+            <span className="font-black text-xl uppercase tracking-tighter">EYERIS</span>
           </div>
-          <div className="text-sm text-white/60 font-medium uppercase tracking-wider">
-            Hackathon 2026 · Built with Gemini + ElevenLabs
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-white/60 font-medium uppercase tracking-wider">
+              For Gen AI Genesis · By Jacob Mobin
+            </span>
+            <button
+              onClick={() => { savePreference('onboarded', false); setShowOnboarding(true); }}
+              className="text-[10px] text-white/30 hover:text-white/60 uppercase tracking-wider border border-white/20 px-2 py-1 transition-colors"
+            >
+              Reset Onboarding
+            </button>
           </div>
         </div>
       </footer>

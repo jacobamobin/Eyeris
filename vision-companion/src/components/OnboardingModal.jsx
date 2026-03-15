@@ -11,7 +11,7 @@ const STEPS = [
     iconColor: 'white',
     num: '01',
     title: 'SCENE UNDERSTANDING',
-    desc: 'VisionCompanion uses your camera to describe your surroundings in real time. Point at anything and ask questions.',
+    desc: 'Eyeris uses your camera to describe your surroundings in real time. Point at anything and ask questions.',
     detail: 'AI-powered scene analysis every 2.5 seconds',
   },
   {

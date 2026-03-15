@@ -31,7 +31,7 @@ export default function MainView() {
     <main
       className="relative w-full h-screen bg-black overflow-hidden"
       role="main"
-      aria-label="VisionCompanion camera view"
+      aria-label="Eyeris camera view"
     >
       {/* Thinking edge glow */}
       <AnimatePresence>

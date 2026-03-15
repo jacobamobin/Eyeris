@@ -1,5 +1,5 @@
 /**
- * agentLoop.js — Always-on VisionCompanion agent.
+ * agentLoop.js — Always-on Eyeris agent.
  *
  * Scan loop runs in ALL modes continuously — provides overlays everywhere.
  * Voice handler adds 2s cooldown after speaking so scan doesn't compete.
