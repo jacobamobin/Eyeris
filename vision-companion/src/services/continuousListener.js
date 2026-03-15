@@ -1,61 +1,238 @@
 /**
  * continuousListener.js
- * Always-on voice detection with speculative frame capture and barge-in support.
+ * Always-on voice detection using OpenAI Whisper API.
  *
- * Key design:
- * - interimResults: true — on interim result, capture frame speculatively
- * - On final result: if micMuted, ignore. If isSpeaking, fire onBargeIn. Else fire onSpeech.
- * - Auto-restart on end/error
+ * Uses AudioContext AnalyserNode for VAD (voice activity detection).
+ * When speech is detected → records → on silence → sends to Whisper → fires callback.
+ * Speculatively captures a camera frame while user is talking.
  */
 
-let recognition = null;
-let active = false;
-let restartTimer = null;
-let micMuted = false;
+import { OPENAI_API_KEY } from '../config';
 
-let latestFrameCapture = null; // pre-captured base64 from interim speech
-let _ttsJustEnded = null;      // timestamp — suppress echo after TTS stops
+// ─── State ───────────────────────────────────────────────────────────────────
+let active = false;
+let micMuted = false;
+let ttsActive = false;
+let _ttsJustEnded = null;
 
 let _onSpeech = null;
 let _onBargeIn = null;
 let _getVideoRef = null;
 let _getIsSpeaking = null;
 
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let isSending = false;
+let silenceTimer = null;
+let vadInterval = null;
+let latestFrameCapture = null;
+
+// VAD tuning
+const SPEECH_THRESHOLD = 15;      // RMS threshold to detect speech
+const SILENCE_DURATION_MS = 800;   // silence before we cut and send
+const VAD_CHECK_MS = 80;          // how often to check audio level
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
 export function setMicMuted(muted) {
   micMuted = muted;
+  if (muted && isRecording) _stopRecording(true); // discard
 }
 
-// Called by ttsService when TTS starts — abort recognition so AI voice isn't picked up
 export function onTTSStart() {
-  if (recognition) {
-    try { recognition.abort(); } catch (_) {}
-  }
+  ttsActive = true;
+  if (isRecording) _stopRecording(true); // discard — AI is speaking
 }
 
-// Called by ttsService when TTS ends — wait for echo to clear, then restart
 export function onTTSEnd() {
+  ttsActive = false;
   _ttsJustEnded = Date.now();
-  if (active) {
-    restartTimer = setTimeout(_start, 450); // 450ms gap clears echo
-  }
 }
 
-export function startContinuousListening({ onSpeech, onBargeIn, getVideoRef, getIsSpeaking }) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    console.warn('Web Speech API not supported — continuous listening unavailable');
-    return false;
-  }
-
+export async function startContinuousListening({ onSpeech, onBargeIn, getVideoRef, getIsSpeaking }) {
   _onSpeech = onSpeech;
   _onBargeIn = onBargeIn;
   _getVideoRef = getVideoRef;
   _getIsSpeaking = getIsSpeaking;
 
   active = true;
-  _start();
+
+  try {
+    console.log('Whisper listener: requesting mic...');
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    console.log('Whisper listener: mic acquired, tracks:', micStream.getAudioTracks().length);
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+
+    // Start VAD polling
+    _startVAD();
+    console.log('Whisper listener: VAD started, threshold:', SPEECH_THRESHOLD);
+  } catch (err) {
+    console.error('Mic access failed:', err);
+    return false;
+  }
   return true;
 }
+
+export function stopContinuousListening() {
+  active = false;
+  if (vadInterval) { clearInterval(vadInterval); vadInterval = null; }
+  if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop(); } catch (_) {}
+  }
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
+  if (audioCtx) {
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+  }
+}
+
+// Legacy exports
+export function pauseListening() { /* no-op */ }
+export function resumeListening() { /* no-op */ }
+
+// ─── VAD (Voice Activity Detection) ─────────────────────────────────────────
+
+function _getRMS() {
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    const v = (data[i] - 128) / 128;
+    sum += v * v;
+  }
+  return Math.sqrt(sum / data.length) * 100;
+}
+
+function _startVAD() {
+  if (vadInterval) clearInterval(vadInterval);
+  vadInterval = setInterval(() => {
+    if (!active || micMuted || ttsActive || isSending) return;
+
+    // Suppress echo right after TTS
+    if (_ttsJustEnded && Date.now() - _ttsJustEnded < 600) return;
+
+    const rms = _getRMS();
+
+    if (rms > SPEECH_THRESHOLD) {
+      // Speech detected
+      if (!isRecording) {
+        console.log('VAD: speech detected, RMS:', rms.toFixed(1));
+        _startRecording();
+      }
+      // Reset silence timer — user is still talking
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+    } else if (isRecording) {
+      // Silence while recording — start countdown
+      if (!silenceTimer) {
+        silenceTimer = setTimeout(() => {
+          silenceTimer = null;
+          _stopRecording(false); // send to Whisper
+        }, SILENCE_DURATION_MS);
+      }
+    }
+  }, VAD_CHECK_MS);
+}
+
+// ─── Recording ──────────────────────────────────────────────────────────────
+
+function _startRecording() {
+  if (isRecording || !micStream) return;
+  isRecording = true;
+  recordedChunks = [];
+
+  // Capture a frame speculatively while user starts talking
+  _captureFrameSpeculative();
+
+  mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' });
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.start(100); // collect in 100ms chunks
+}
+
+function _stopRecording(discard) {
+  if (!isRecording || !mediaRecorder) return;
+  isRecording = false;
+  if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+
+  const recorder = mediaRecorder;
+  mediaRecorder = null;
+
+  if (discard) {
+    try { recorder.stop(); } catch (_) {}
+    recordedChunks = [];
+    return;
+  }
+
+  recorder.onstop = async () => {
+    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+    recordedChunks = [];
+    // Skip very short recordings (< 0.3s worth of data)
+    if (blob.size < 5000) return;
+
+    const preCapture = latestFrameCapture;
+    latestFrameCapture = null;
+
+    await _transcribe(blob, preCapture);
+  };
+
+  try { recorder.stop(); } catch (_) {}
+}
+
+// ─── Whisper Transcription ──────────────────────────────────────────────────
+
+async function _transcribe(audioBlob, preCapture) {
+  if (isSending) return;
+  isSending = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'speech.webm');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'en');
+    formData.append('response_format', 'text');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      console.error('Whisper API error:', res.status);
+      return;
+    }
+
+    const transcript = (await res.text()).trim();
+    console.log('Whisper transcript:', transcript);
+    if (!transcript || transcript.length < 3) return;
+
+    // Check if TTS started while we were transcribing (barge-in)
+    if (ttsActive && _onBargeIn) {
+      _onBargeIn(transcript);
+    } else if (_onSpeech) {
+      _onSpeech(transcript, preCapture);
+    }
+  } catch (err) {
+    console.error('Whisper transcription error:', err);
+  } finally {
+    isSending = false;
+  }
+}
+
+// ─── Speculative Frame Capture ──────────────────────────────────────────────
 
 function _captureFrameSpeculative() {
   try {
@@ -71,88 +248,7 @@ function _captureFrameSpeculative() {
     ctx.drawImage(videoRef, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
     latestFrameCapture = dataUrl.split(',')[1];
-  } catch (e) {
+  } catch (_) {
     latestFrameCapture = null;
   }
-}
-
-function _start() {
-  if (!active) return;
-  if (recognition) {
-    try { recognition.stop(); } catch (_) {}
-  }
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-  recognition.maxAlternatives = 1;
-
-  recognition.onresult = (event) => {
-    const result = event.results[event.results.length - 1];
-
-    if (!result.isFinal) {
-      // Interim result — speculatively capture a frame right now
-      _captureFrameSpeculative();
-      return;
-    }
-
-    // Final result — apply quality filters before firing
-    const transcript = result[0].transcript.trim();
-    const confidence = result[0].confidence ?? 1;
-    const wordCount = transcript.split(/\s+/).filter(Boolean).length;
-
-    // Reject: muted, too short, too few words, low confidence
-    if (micMuted) return;
-    if (transcript.length < 6) return;
-    if (wordCount < 2) return;
-    if (confidence < 0.60) return;
-
-    // Reject if it looks like the AI echoed its own output back
-    // (very short pause after speaking → skip this result)
-    if (_ttsJustEnded && Date.now() - _ttsJustEnded < 600) return;
-
-    const preCapture = latestFrameCapture;
-    latestFrameCapture = null;
-    if (_onSpeech) _onSpeech(transcript, preCapture);
-  };
-
-  recognition.onerror = (event) => {
-    if (event.error !== 'no-speech' && event.error !== 'aborted') {
-      console.warn('Speech recognition error:', event.error);
-    }
-  };
-
-  recognition.onend = () => {
-    if (active) {
-      restartTimer = setTimeout(_start, 300);
-    }
-  };
-
-  try {
-    recognition.start();
-  } catch (e) {
-    // Already started — ignore
-  }
-}
-
-export function stopContinuousListening() {
-  active = false;
-  if (restartTimer) clearTimeout(restartTimer);
-  if (recognition) {
-    try { recognition.stop(); } catch (_) {}
-    recognition = null;
-  }
-}
-
-// Legacy exports kept for backward compat
-export function pauseListening() {
-  if (recognition) {
-    try { recognition.abort(); } catch (_) {}
-  }
-}
-
-export function resumeListening() {
-  if (active) _start();
 }

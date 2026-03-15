@@ -31,14 +31,14 @@ export default function ControlBar() {
     stopSpeaking();
     flash(newMode);
     setMode(newMode);
-    // Scan loop always keeps running for overlays — only mode label changes
+    setAvatarState('idle');
+    // All modes: scan loop + voice always running
+    // READ: also triggers a one-shot text read on switch
+    // FIND: just sets a helpful caption hint
     if (newMode === 'read') {
-      await runOnceRead();
+      runOnceRead();
     } else if (newMode === 'find') {
       setCurrentCaption('Say what you\'re looking for...');
-      setAvatarState('listening');
-    } else {
-      setAvatarState('idle');
     }
   };
 

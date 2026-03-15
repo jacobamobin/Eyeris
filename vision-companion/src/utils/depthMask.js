@@ -47,7 +47,7 @@ export function createDepthMask(bbox, _depthMaskRange, depthBuffer, depthWidth, 
         imageData.data[idx] = r;
         imageData.data[idx + 1] = g;
         imageData.data[idx + 2] = b;
-        imageData.data[idx + 3] = 80;
+        imageData.data[idx + 3] = 140;
       }
     }
   }

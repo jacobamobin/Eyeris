@@ -1,42 +1,91 @@
 import { useAppStore } from '../store/useAppStore';
 import { DEPTH_INTERVAL_MS } from '../config';
+import { pipeline, env, RawImage } from '@huggingface/transformers';
 
-let worker = null;
+env.allowLocalModels = false;
+
+let estimator = null;
 let intervalId = null;
 let frameCount = 0;
 let fpsTimer = null;
 let lastObstacleAlert = 0;
 let obstacleCount = 0;
+let isRunning = false;
 let isCapturing = false;
 
-export function initDepthService(videoElement) {
-  if (worker) return;
+export async function initDepthService(videoElement) {
+  if (isRunning) return;
+  isRunning = true;
 
-  worker = new Worker(new URL('../workers/depthWorker.js', import.meta.url), { type: 'module' });
+  const store = useAppStore.getState();
+  store.setDepthModelLoading(true);
+  store.setDepthModelProgress(0);
+  console.log('[Depth] Loading model...');
 
-  worker.onmessage = (e) => {
-    const store = useAppStore.getState();
-    if (e.data.type === 'loading') {
-      store.setDepthModelLoading(true);
-      store.setDepthModelProgress(e.data.progress);
-    } else if (e.data.type === 'ready') {
+  try {
+    estimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+      device: 'webgpu',
+      dtype: 'fp16',
+      progress_callback: (p) => {
+        if (p.status === 'progress') {
+          useAppStore.getState().setDepthModelProgress(Math.round(p.progress));
+        }
+      }
+    });
+    console.log('[Depth] Model loaded (webgpu)');
+  } catch (e) {
+    console.log('[Depth] WebGPU failed, trying WASM:', e.message);
+    try {
+      estimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+        device: 'wasm',
+        progress_callback: (p) => {
+          if (p.status === 'progress') {
+            useAppStore.getState().setDepthModelProgress(Math.round(p.progress));
+          }
+        }
+      });
+      console.log('[Depth] Model loaded (wasm)');
+    } catch (err) {
+      console.error('[Depth] Failed to load model:', err);
       store.setDepthModelLoading(false);
-      store.setDepthReady(true);
-      startCapture(videoElement);
-    } else if (e.data.type === 'depth') {
-      store.setDepthBuffer(e.data.depthData, e.data.width, e.data.height);
-      frameCount++;
-      checkObstacle(e.data.depthData, e.data.width, e.data.height);
+      isRunning = false;
+      return;
     }
-  };
+  }
 
-  worker.postMessage({ type: 'init' });
+  store.setDepthModelLoading(false);
+  store.setDepthReady(true);
+  console.log('[Depth] Starting capture loop');
+  startCapture(videoElement);
 
-  // FPS counter
   fpsTimer = setInterval(() => {
     useAppStore.getState().setDepthFPS(frameCount);
     frameCount = 0;
   }, 1000);
+}
+
+async function processFrame(videoElement) {
+  if (isCapturing || !estimator || !videoElement || videoElement.readyState < 2) return;
+  isCapturing = true;
+  try {
+    const canvas = new OffscreenCanvas(256, 256);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoElement, 0, 0, 256, 256);
+    const imageData = ctx.getImageData(0, 0, 256, 256);
+    const rawImage = new RawImage(imageData.data, 256, 256, 4);
+    const result = await estimator(rawImage);
+    const depthData = result.depth.data;
+    const uint8 = new Uint8Array(depthData.length);
+    for (let i = 0; i < depthData.length; i++) {
+      uint8[i] = Math.round(depthData[i] * 255);
+    }
+    useAppStore.getState().setDepthBuffer(uint8, result.depth.width, result.depth.height);
+    frameCount++;
+    checkObstacle(uint8, result.depth.width, result.depth.height);
+  } catch (err) {
+    console.error('[Depth] Frame error:', err);
+  }
+  isCapturing = false;
 }
 
 function checkObstacle(depthData, width, height) {
@@ -76,27 +125,13 @@ function checkObstacle(depthData, width, height) {
 
 function startCapture(videoElement) {
   if (intervalId) return;
-  intervalId = setInterval(() => {
-    if (isCapturing || !videoElement || videoElement.readyState < 2) return;
-    isCapturing = true;
-    try {
-      const canvas = new OffscreenCanvas(256, 256);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoElement, 0, 0, 256, 256);
-      // transferToImageBitmap is synchronous and properly transfers ownership
-      const bitmap = canvas.transferToImageBitmap();
-      worker.postMessage({ type: 'frame', imageBitmap: bitmap }, [bitmap]);
-    } catch (e) {
-      console.warn('Frame capture failed:', e);
-    }
-    isCapturing = false;
-  }, DEPTH_INTERVAL_MS);
+  intervalId = setInterval(() => processFrame(videoElement), DEPTH_INTERVAL_MS);
 }
 
 export function stopDepthService() {
   if (intervalId) clearInterval(intervalId);
   if (fpsTimer) clearInterval(fpsTimer);
-  if (worker) { worker.terminate(); worker = null; }
   intervalId = null;
+  isRunning = false;
   isCapturing = false;
 }

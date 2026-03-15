@@ -1,4 +1,5 @@
 import { GEMINI_API_KEY, GEMINI_MODEL } from '../config';
+import { useAppStore } from '../store/useAppStore';
 
 // ─── Voice streaming prompt (short, fast) ────────────────────────────────────
 
@@ -57,26 +58,46 @@ async function* streamGemini(response) {
 
 // ─── Streaming voice response ─────────────────────────────────────────────────
 
+// ─── Conversation history for multi-turn ─────────────────────────────────────
+const conversationHistory = []; // { role: 'user'|'model', text: string }
+const MAX_HISTORY = 6; // keep last 3 exchanges (6 messages)
+
+export function addToHistory(role, text) {
+  conversationHistory.push({ role, text });
+  if (conversationHistory.length > MAX_HISTORY) conversationHistory.splice(0, 2); // drop oldest pair
+}
+
 export async function* streamVoiceResponse(imageBase64, userQuery, memories = []) {
   const memoryContext = memories.length > 0
     ? `\nContext: ${memories.join(' | ')}`
     : '';
 
-  const userText = `User asked: "${userQuery}"${memoryContext}`;
+  // Build multi-turn contents array
+  const contents = [];
+
+  // Add conversation history (text-only, no images for past turns)
+  for (const msg of conversationHistory) {
+    contents.push({ role: msg.role, parts: [{ text: msg.text }] });
+  }
+
+  // Current turn with image
+  const userText = `${userQuery}${memoryContext}`;
+  contents.push({
+    role: 'user',
+    parts: [
+      ...(imageBase64 ? [{ inline_data: { mime_type: 'image/jpeg', data: imageBase64 } }] : []),
+      { text: userText },
+    ],
+  });
 
   const requestBody = {
     system_instruction: { parts: [{ text: VOICE_SYSTEM_PROMPT }] },
-    contents: [{
-      role: 'user',
-      parts: [
-        ...(imageBase64 ? [{ inline_data: { mime_type: 'image/jpeg', data: imageBase64 } }] : []),
-        { text: userText },
-      ],
-    }],
+    contents,
     generationConfig: {
       responseMimeType: 'text/plain',
       temperature: 0.7,
-      maxOutputTokens: 200,
+      maxOutputTokens: 300,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
@@ -157,8 +178,10 @@ Respond with valid JSON only.`;
       ]
     }],
     generationConfig: {
+      responseMimeType: 'application/json',
       temperature: 0.4,
-      maxOutputTokens: 800,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
@@ -174,8 +197,16 @@ Respond with valid JSON only.`;
       throw new Error(`Gemini API error: ${response.status}`);
     }
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('No response text from Gemini');
+    const candidate = data.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text;
+    if (!text) {
+      console.warn('Gemini no text. finishReason:', candidate?.finishReason, JSON.stringify(data).slice(0, 300));
+      throw new Error('No response text from Gemini');
+    }
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      console.warn('Gemini hit MAX_TOKENS — response truncated, JSON will be invalid');
+    }
+    console.log('Gemini raw (len=' + text.length + '):', text.slice(0, 200));
     const result = parseGeminiJSON(text);
     if (!result) throw new Error('Failed to parse Gemini JSON');
     return result;

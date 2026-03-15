@@ -12,7 +12,7 @@ export default function CameraFeed() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true,
+          audio: false,
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;

@@ -139,6 +139,7 @@ export async function streamAndSpeak(textStream) {
     }
     try { onTTSEnd(); } catch (_) {}
   }
+  return lastSpokenText.trim() || null;
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

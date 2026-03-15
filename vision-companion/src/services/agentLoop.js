@@ -7,7 +7,7 @@
 
 import { useAppStore } from '../store/useAppStore';
 import { captureFrame } from '../utils/frameCapture';
-import { analyzeFrame, streamVoiceResponse } from './geminiService';
+import { analyzeFrame, streamVoiceResponse, addToHistory } from './geminiService';
 import { speak, stopSpeaking, unlockAudio, streamAndSpeak, registerTTSHooks } from './ttsService';
 import { startContinuousListening, stopContinuousListening, onTTSStart, onTTSEnd } from './continuousListener';
 import { getRelevantMemories, saveMemory, saveConversation, pruneOldMemories } from './memoryService';
@@ -70,14 +70,15 @@ async function handleSpeech(transcript, preCapture) {
 
     const memories = getRelevantMemories(transcript, 3).map(m => m.content);
 
-    let query = transcript;
-    if (store.mode === 'find') {
-      query = `Locate: "${transcript}". Tell me exactly where it is and how to reach it.`;
-    }
+    // Add user message to history
+    addToHistory('user', transcript);
 
-    const textStream = streamVoiceResponse(frame, query, memories);
+    const textStream = streamVoiceResponse(frame, transcript, memories);
     store.setAvatarState('speaking');
-    await streamAndSpeak(textStream);
+    const fullResponse = await streamAndSpeak(textStream);
+
+    // Add model response to history for multi-turn
+    if (fullResponse) addToHistory('model', fullResponse);
 
     try { await saveConversation({ role: 'user', content: transcript, mode: store.mode }); } catch (_) {}
   } catch (err) {
@@ -141,7 +142,10 @@ export function startAgentLoop() {
       const result = await analyzeFrame(base64, null, memories, 'scan');
       if (!result) return;
 
-      if (result.objects?.length) store.setDetectedObjects(result.objects);
+      if (result.objects?.length) {
+        console.log('Scan: setting', result.objects.length, 'objects');
+        store.setDetectedObjects(result.objects);
+      }
       if (result.caption && jaccardSimilarity(result.caption, store.currentCaption) < 0.65) {
         store.setCurrentCaption(result.caption);
       }
@@ -199,7 +203,7 @@ export async function runOnceRead() {
     const frame = await captureFrame(store.videoRef);
     if (!frame) return;
     const memories = getRelevantMemories('read text', 3).map(m => m.content);
-    const textStream = streamVoiceResponse(frame, 'Read all visible text in the image, word for word.', memories);
+    const textStream = streamVoiceResponse(frame, 'Describe the full scene in front of me — what you see, where things are spatially, and read any visible text word for word.', memories);
     store.setAvatarState('speaking');
     await streamAndSpeak(textStream);
   } catch (err) {

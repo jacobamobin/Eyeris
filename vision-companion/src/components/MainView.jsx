@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import CameraFeed from './CameraFeed';
 import DepthMiniMap from './DepthMiniMap';
 import StatusIndicator from './StatusIndicator';
@@ -12,7 +13,7 @@ import { startAgentLoop, stopAgentLoop, startVoiceAgent, stopVoiceAgent } from '
 import { stopDepthService } from '../services/depthService';
 
 export default function MainView() {
-  const { cameraError, cameraReady } = useAppStore();
+  const { cameraError, cameraReady, avatarState } = useAppStore();
 
   useEffect(() => {
     if (cameraReady) {
@@ -32,6 +33,22 @@ export default function MainView() {
       role="main"
       aria-label="VisionCompanion camera view"
     >
+      {/* Thinking edge glow */}
+      <AnimatePresence>
+        {(avatarState === 'thinking') && (
+          <motion.div
+            key="thinking-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0.4, 0.8, 0.4] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute inset-0 z-30 pointer-events-none"
+            style={{ boxShadow: 'inset 0 0 30px 8px rgba(240,192,32,0.5)' }}
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Camera Feed */}
       <CameraFeed />
 
