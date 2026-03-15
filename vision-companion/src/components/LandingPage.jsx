@@ -4,7 +4,6 @@ import { useAppStore } from '../store/useAppStore';
 import {
   Eye, Zap, Mic, Shield, Brain, Globe,
   Scan, BookOpen, Search, AudioLines, AlertTriangle,
-  Layers, Crosshair, Volume2, Navigation,
 } from 'lucide-react';
 import OnboardingModal from './OnboardingModal';
 import { getPreference, savePreference } from '../services/memoryService';
@@ -44,36 +43,6 @@ const MODE_BUTTONS = [
   { id: 'find', label: 'FIND', Icon: Search, color: 'bg-white', activeText: 'text-[#121212]' },
 ];
 
-const DIFFERENTIATORS = [
-  {
-    icon: Layers,
-    them: 'ChatGPT describes a photo you upload.',
-    us: 'Eyeris draws bounding boxes and depth-colored silhouette overlays directly onto your live camera feed — you see exactly what it sees.',
-    label: 'LIVE VISUAL OVERLAYS',
-    accent: '#1040C0',
-  },
-  {
-    icon: AlertTriangle,
-    them: 'AI chatbots wait for you to ask.',
-    us: 'Eyeris detects stairs, vehicles, and obstacles automatically and fires a haptic vibration + spoken warning — before you even notice.',
-    label: 'PROACTIVE HAZARD ALERTS',
-    accent: '#D02020',
-  },
-  {
-    icon: Navigation,
-    them: '"There\'s a bench somewhere in the scene."',
-    us: '"Bench to your right, 2.8 meters ahead." On-device depth sensing turns every object into a spatial direction with a real distance.',
-    label: 'SPATIAL AWARENESS',
-    accent: '#F0C020',
-  },
-  {
-    icon: Volume2,
-    them: 'Type a question. Wait. Read the answer.',
-    us: 'Just talk. Eyeris is always listening, responds in under a second with a natural voice, and remembers your last few exchanges.',
-    label: 'ALWAYS-ON VOICE',
-    accent: '#1040C0',
-  },
-];
 
 const FEATURES = [
   { icon: Eye, title: 'SCENE UNDERSTANDING', desc: 'Gemini 2.5 Flash identifies objects, people, text and spatial relationships in real time.', accent: '#1040C0' },
@@ -609,64 +578,150 @@ export default function LandingPage() {
       {/* ── Why Not Just ChatGPT ──────────────── */}
       <section className="bg-[#121212] py-20 px-6 sm:px-12 border-b-4 border-[#1040C0]">
         <div className="max-w-6xl mx-auto">
-          <div className="mb-4">
+          <div className="mb-14 text-center">
             <div className="inline-block bg-[#D02020] text-white text-xs font-bold uppercase tracking-widest px-3 py-1.5 border-2 border-white/20 mb-6">
               NOT JUST AI CHAT
             </div>
             <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tighter text-white leading-tight">
-              WHAT MAKES<br />
-              <span className="text-[#F0C020]">EYERIS DIFFERENT</span>
+              WHAT MAKES <span className="text-[#F0C020]">EYERIS DIFFERENT</span>
             </h2>
-            <p className="mt-4 text-white/60 font-medium text-base max-w-xl">
-              ChatGPT can describe a photo. Eyeris inhabits your camera in real time and acts on what it sees — without you having to ask.
+            <p className="mt-4 text-white/50 font-medium text-base max-w-xl mx-auto">
+              ChatGPT describes a photo. Eyeris inhabits your camera and acts on what it sees, without you asking.
             </p>
           </div>
 
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-px bg-white/10">
-            {DIFFERENTIATORS.map((d, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-40px' }}
-                transition={{ duration: 0.35, delay: i * 0.08 }}
-                className="bg-[#121212] p-8 relative group"
-              >
-                {/* Accent bar */}
-                <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ backgroundColor: d.accent }} />
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y-4 md:divide-y-0 md:divide-x-4 divide-white/10">
 
-                <div className="flex items-start gap-5">
-                  <div
-                    className="w-11 h-11 flex-shrink-0 flex items-center justify-center border-2 border-white/20"
-                    style={{ backgroundColor: d.accent }}
-                  >
-                    <d.icon size={20} color={d.accent === '#F0C020' ? '#121212' : 'white'} strokeWidth={2} />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: d.accent }}>
-                      {d.label}
-                    </div>
-                    {/* Comparison */}
-                    <div className="mb-3 flex items-start gap-2">
-                      <div className="flex-shrink-0 w-4 h-4 bg-white/10 flex items-center justify-center mt-0.5">
-                        <span className="text-white/40 text-[8px] font-black">✕</span>
-                      </div>
-                      <p className="text-white/40 text-sm font-medium leading-relaxed line-through decoration-white/20">
-                        {d.them}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5" style={{ backgroundColor: d.accent }}>
-                        <span className="text-[8px] font-black" style={{ color: d.accent === '#F0C020' ? '#121212' : 'white' }}>✓</span>
-                      </div>
-                      <p className="text-white text-sm font-medium leading-relaxed">
-                        {d.us}
-                      </p>
-                    </div>
-                  </div>
+            {/* ① Live Visual Overlays */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.4 }}
+              className="px-8 py-10 flex flex-col gap-6"
+            >
+              <div className="text-sm font-black uppercase tracking-widest text-[#1040C0]">01 LIVE VISUAL OVERLAYS</div>
+              {/* Diagram */}
+              <div className="w-full aspect-[4/3] bg-[#0a0a0a] border-2 border-white/10 relative overflow-hidden flex-shrink-0">
+                {/* Simulated camera scene */}
+                <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #3a6aaa 0%, #5B8EC9 55%, #4a8f38 55%, #3a7028 100%)' }} />
+
+                {/* Person box with gray depth silhouette */}
+                <div className="absolute border-[1.5px] border-dashed border-[#F0C020]" style={{ left: '12%', top: '18%', width: '22%', height: '52%' }}>
+                  <CornerMarkers color="#F0C020" size={6} thickness={1.5} />
+                  {/* depth silhouette - person shape: head oval + body rect */}
+                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 80" preserveAspectRatio="none">
+                    <ellipse cx="20" cy="14" rx="9" ry="11" fill="rgba(100,100,100,0.55)" />
+                    <rect x="10" y="24" width="20" height="38" rx="3" fill="rgba(100,100,100,0.55)" />
+                    <rect x="12" y="62" width="7" height="14" rx="2" fill="rgba(100,100,100,0.5)" />
+                    <rect x="21" y="62" width="7" height="14" rx="2" fill="rgba(100,100,100,0.5)" />
+                  </svg>
+                  <div className="absolute -top-4 left-0 bg-[#F0C020] text-[#121212] text-[6px] font-black px-1 py-[1px] uppercase whitespace-nowrap">PERSON · 1.2m</div>
                 </div>
-              </motion.div>
-            ))}
+
+                {/* Bench box with warm yellow-orange depth silhouette */}
+                <div className="absolute border-[1.5px] border-dashed border-[#1040C0]" style={{ left: '54%', top: '46%', width: '34%', height: '28%' }}>
+                  <CornerMarkers color="#1040C0" size={6} thickness={1.5} />
+                  {/* depth silhouette - bench shape: seat + legs */}
+                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 60 40" preserveAspectRatio="none">
+                    <rect x="4" y="10" width="52" height="8" rx="2" fill="rgba(240,192,32,0.45)" />
+                    <rect x="6" y="18" width="6" height="16" rx="1" fill="rgba(240,192,32,0.4)" />
+                    <rect x="48" y="18" width="6" height="16" rx="1" fill="rgba(240,192,32,0.4)" />
+                    <rect x="18" y="18" width="6" height="16" rx="1" fill="rgba(240,192,32,0.35)" />
+                    <rect x="36" y="18" width="6" height="16" rx="1" fill="rgba(240,192,32,0.35)" />
+                  </svg>
+                  <div className="absolute -top-4 left-0 bg-[#1040C0] text-white text-[6px] font-black px-1 py-[1px] uppercase whitespace-nowrap">BENCH · 3.1m</div>
+                </div>
+
+                {/* depth minimap */}
+                <div className="absolute top-2 left-2 w-9 h-7 border border-white/40" style={{ background: 'linear-gradient(135deg, #22d3ee, #facc15 50%, #ef4444)' }} />
+                <div className="absolute bottom-2 right-2 text-[6px] text-white/40 font-bold uppercase tracking-wider">DEPTH OVERLAY</div>
+              </div>
+              <div>
+                <p className="text-white/40 text-xs font-medium line-through decoration-white/20 mb-2">ChatGPT describes a photo you upload.</p>
+                <p className="text-white text-sm font-medium leading-relaxed">Eyeris draws labeled bounding boxes and depth-colored silhouette overlays directly onto your live feed, so you see exactly what it sees.</p>
+              </div>
+            </motion.div>
+
+            {/* ② Proactive Hazard Alerts */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.4, delay: 0.1 }}
+              className="px-8 py-10 flex flex-col gap-6"
+            >
+              <div className="text-sm font-black uppercase tracking-widest text-[#D02020]">02 PROACTIVE HAZARD ALERTS</div>
+              {/* Diagram */}
+              <div className="w-full aspect-[4/3] bg-[#0a0a0a] border-2 border-white/10 relative overflow-hidden flex-shrink-0">
+                {/* Background scene */}
+                <div className="absolute inset-0 bg-[#111]" />
+                {/* Staircase SVG */}
+                <svg className="absolute bottom-0 left-0 w-full h-[55%]" viewBox="0 0 200 80" preserveAspectRatio="none">
+                  <path d="M0 80 L0 60 L40 60 L40 44 L80 44 L80 30 L120 30 L120 18 L160 18 L160 8 L200 8 L200 80 Z" fill="#1a1a1a" stroke="#333" strokeWidth="1" />
+                  <line x1="0" y1="60" x2="40" y2="60" stroke="#444" strokeWidth="1" />
+                  <line x1="40" y1="44" x2="80" y2="44" stroke="#444" strokeWidth="1" />
+                  <line x1="80" y1="30" x2="120" y2="30" stroke="#444" strokeWidth="1" />
+                  <line x1="120" y1="18" x2="160" y2="18" stroke="#444" strokeWidth="1" />
+                  <line x1="160" y1="8" x2="200" y2="8" stroke="#444" strokeWidth="1" />
+                </svg>
+                {/* Alert banner */}
+                <div className="absolute top-3 left-3 right-3 bg-[#D02020] border border-white/30 px-2 py-1.5 flex items-center gap-1.5">
+                  <AlertTriangle size={10} color="white" strokeWidth={2.5} />
+                  <span className="text-white text-[7px] font-black uppercase tracking-wide">CAUTION: STAIRS AHEAD</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-white/40 text-xs font-medium line-through decoration-white/20 mb-2">AI chatbots wait for you to ask.</p>
+                <p className="text-white text-sm font-medium leading-relaxed">Eyeris detects stairs, vehicles, and obstacles automatically and fires a haptic vibration + spoken warning before you reach them.</p>
+              </div>
+            </motion.div>
+
+            {/* ③ Spatial Awareness */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.4, delay: 0.2 }}
+              className="px-8 py-10 flex flex-col gap-6"
+            >
+              <div className="text-sm font-black uppercase tracking-widest text-[#F0C020]">03 SPATIAL AWARENESS</div>
+              {/* Diagram - top-down radar */}
+              <div className="w-full aspect-[4/3] bg-[#0a0a0a] border-2 border-white/10 relative overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <svg viewBox="0 0 160 120" className="w-full h-full">
+                  {/* Range rings */}
+                  {[40, 70, 100].map((r, i) => (
+                    <ellipse key={i} cx="80" cy="105" rx={r * 0.7} ry={r * 0.45}
+                      fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="3 3" />
+                  ))}
+                  {/* Distance labels */}
+                  <text x="107" y="87" fill="rgba(255,255,255,0.25)" fontSize="5" fontFamily="monospace">1m</text>
+                  <text x="125" y="72" fill="rgba(255,255,255,0.2)" fontSize="5" fontFamily="monospace">2m</text>
+                  <text x="143" y="60" fill="rgba(255,255,255,0.15)" fontSize="5" fontFamily="monospace">3m</text>
+                  {/* Direction lines */}
+                  <line x1="80" y1="105" x2="80" y2="10" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                  <line x1="80" y1="105" x2="20" y2="60" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                  <line x1="80" y1="105" x2="140" y2="60" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                  {/* Object: bench to right */}
+                  <motion.g animate={{ opacity: [0.7, 1, 0.7] }} transition={{ duration: 2, repeat: Infinity }}>
+                    <rect x="112" y="74" width="14" height="8" rx="1" fill="#1040C0" opacity="0.9" />
+                    <text x="119" y="80" textAnchor="middle" fill="white" fontSize="4" fontWeight="bold" fontFamily="monospace">BENCH</text>
+                    {/* line from user to object */}
+                    <line x1="80" y1="105" x2="116" y2="78" stroke="#1040C0" strokeWidth="1" strokeDasharray="3 2" opacity="0.6" />
+                    <text x="102" y="97" fill="#1040C0" fontSize="5" fontWeight="bold" fontFamily="monospace">2.8m</text>
+                  </motion.g>
+                  {/* Object: person to left */}
+                  <motion.g animate={{ opacity: [0.7, 1, 0.7] }} transition={{ duration: 2, delay: 0.5, repeat: Infinity }}>
+                    <rect x="36" y="68" width="16" height="8" rx="1" fill="#F0C020" opacity="0.9" />
+                    <text x="44" y="74" textAnchor="middle" fill="#121212" fontSize="4" fontWeight="bold" fontFamily="monospace">PERSON</text>
+                    <line x1="80" y1="105" x2="43" y2="72" stroke="#F0C020" strokeWidth="1" strokeDasharray="3 2" opacity="0.6" />
+                    <text x="52" y="97" fill="#F0C020" fontSize="5" fontWeight="bold" fontFamily="monospace">1.2m</text>
+                  </motion.g>
+                  {/* User marker */}
+                  <circle cx="80" cy="105" r="5" fill="#D02020" stroke="white" strokeWidth="1.5" />
+                  <text x="80" y="117" textAnchor="middle" fill="rgba(255,255,255,0.5)" fontSize="5" fontFamily="monospace">YOU</text>
+                </svg>
+              </div>
+              <div>
+                <p className="text-white/40 text-xs font-medium line-through decoration-white/20 mb-2">"There's a bench somewhere in the scene."</p>
+                <p className="text-white text-sm font-medium leading-relaxed">"Bench to your right, 2.8 meters." On-device depth turns every detected object into a real distance and direction.</p>
+              </div>
+            </motion.div>
+
           </div>
         </div>
       </section>
