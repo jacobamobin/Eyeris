@@ -44,23 +44,6 @@ export default function AvatarView() {
 
   return (
     <div className="absolute bottom-28 right-4 z-20 flex flex-col items-center gap-2">
-      {/* Pulse rings */}
-      {config.pulse && (
-        <>
-          <motion.div
-            className="absolute w-16 h-16 rounded-full"
-            style={{ backgroundColor: config.pulseColor }}
-            animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          />
-          <motion.div
-            className="absolute w-16 h-16 rounded-full"
-            style={{ backgroundColor: config.pulseColor }}
-            animate={{ scale: [1, 2.4, 1], opacity: [0.4, 0, 0.4] }}
-            transition={{ duration: 2, delay: 0.4, repeat: Infinity }}
-          />
-        </>
-      )}
 
       {/* Main icon circle */}
       <AnimatePresence mode="wait">
